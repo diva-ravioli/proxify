@@ -202,38 +202,7 @@
         margin: 6px 0;
         color: #555;
       }
-      .cors-fallback {
-        display: none;
-        margin-top: 20px;
-        padding: 20px;
-        background: #fff8e1;
-        border-radius: 10px;
-        border: 1px solid #ffc107;
-      }
-      .cors-fallback pre {
-        background: #191414;
-        color: #b3b3b3;
-        padding: 16px;
-        border-radius: 8px;
-        overflow-x: auto;
-        font-size: 12px;
-        line-height: 1.5;
-        margin-top: 12px;
-      }
-      .copy-btn {
-        background: #555;
-        color: white;
-        border: none;
-        padding: 4px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 12px;
-        float: right;
-        margin-top: -4px;
-      }
-      .copy-btn:hover {
-        background: #777;
-      }
+      
     </style>
   </head>
   <body>
@@ -336,15 +305,7 @@
 
       <div id="error-box"></div>
 
-      <div id="cors-fallback" class="cors-fallback">
-        <strong>Browser-based deployment is blocked by CORS.</strong>
-        <p style="margin-top: 8px; font-size: 0.9em">
-          Run this command in your terminal instead (requires
-          <a href="https://nodejs.org" target="_blank">Node.js</a>):
-        </p>
-        <pre id="fallback-script"></pre>
-        <button class="copy-btn" onclick="copyFallback()">Copy</button>
-      </div>
+      
     </div>
 
     <script>
@@ -358,7 +319,9 @@
         document.getElementById('worker-name').value = name;
       })();
 
-      const CF_API = "https://api.cloudflare.com/client/v4";
+      // CORS proxy deployed on Cloudflare Workers — proxies to api.cloudflare.com
+      const DEPLOY_PROXY = "https://proxify-deployer.synesthesai.workers.dev";
+      const CF_API = DEPLOY_PROXY + "/client/v4";
       // Source repo for fetching the compiled worker
       const WORKER_SOURCE_URL =
         "https://raw.githubusercontent.com/diva-ravioli/proxify/main/dist/worker.mjs";
@@ -405,25 +368,12 @@
         document.getElementById("log-container").style.display = "block";
         document.getElementById("result").style.display = "none";
         document.getElementById("error-box").style.display = "none";
-        document.getElementById("cors-fallback").style.display = "none";
+
 
         try {
           // Step 1: Verify token
           log("Verifying API token...", "log-info");
-          let resp;
-          try {
-            resp = await cfFetch("/user/tokens/verify", token);
-          } catch (e) {
-            // CORS failure
-            log(
-              "CORS error - browser cannot reach Cloudflare API directly.",
-              "log-err",
-            );
-            showCorsFallback(token, accountId, workerName);
-            btn.disabled = false;
-            btn.textContent = "Deploy to Cloudflare Workers";
-            return;
-          }
+          const resp = await cfFetch("/user/tokens/verify", token);
           const verifyData = await resp.json();
           if (!verifyData.success) {
             throw new Error(
@@ -590,24 +540,7 @@
         }
       }
 
-      function showCorsFallback(token, accountId, workerName) {
-        const el = document.getElementById("cors-fallback");
-        el.style.display = "block";
-
-        // Generate a one-liner command using npx and the standalone script
-        const script = `curl -sL https://raw.githubusercontent.com/diva-ravioli/proxify/main/deploy-standalone.js -o /tmp/deploy-proxify.js && node /tmp/deploy-proxify.js`;
-
-        document.getElementById("fallback-script").textContent = script;
-      }
-
-      function copyFallback() {
-        const text = document.getElementById("fallback-script").textContent;
-        navigator.clipboard.writeText(text).then(() => {
-          const btn = event.target;
-          btn.textContent = "Copied!";
-          setTimeout(() => (btn.textContent = "Copy"), 2000);
-        });
-      }
+      
     </script>
   </body>
 </html>
