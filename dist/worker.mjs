@@ -82,6 +82,7 @@ async function handleRoot(request, env) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="UTF-8">
       <title>Spotify Proxy</title>
       <style>
         body {
@@ -206,7 +207,7 @@ async function handleRoot(request, env) {
   `;
   return new Response(html, {
     headers: {
-      "Content-Type": "text/html",
+      "Content-Type": "text/html; charset=utf-8",
       ...corsHeaders
     }
   });
@@ -232,7 +233,7 @@ async function handleSetup(request, env) {
   const html = await getSetupHTML();
   return new Response(html, {
     headers: {
-      "Content-Type": "text/html",
+      "Content-Type": "text/html; charset=utf-8",
       ...corsHeaders
     }
   });
@@ -241,7 +242,7 @@ async function handleCredentials(request, env) {
   const html = await getCredentialsHTML(void 0, request.url);
   return new Response(html, {
     headers: {
-      "Content-Type": "text/html",
+      "Content-Type": "text/html; charset=utf-8",
       ...corsHeaders
     }
   });
@@ -276,7 +277,7 @@ async function handleCallback(request, env) {
   return new Response(
     `
     <html>
-      <head><title>OAuth Success</title></head>
+      <head><meta charset="UTF-8"><title>OAuth Success</title></head>
       <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
         <h1>\u2705 OAuth Setup Complete!</h1>
         <p>Your Spotify account has been successfully connected.</p>
@@ -292,7 +293,7 @@ async function handleCallback(request, env) {
   `,
     {
       headers: {
-        "Content-Type": "text/html",
+        "Content-Type": "text/html; charset=utf-8",
         ...corsHeaders
       }
     }
@@ -484,6 +485,7 @@ async function getSetupHTML() {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="UTF-8">
       <title>Spotify Proxy Setup</title>
       <style>
         body {
@@ -575,6 +577,7 @@ async function getCredentialsHTML(errorMessage, requestUrl) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="UTF-8">
       <title>Spotify Proxy - Setup</title>
       <style>
         body {

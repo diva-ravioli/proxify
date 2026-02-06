@@ -118,6 +118,7 @@ async function handleRoot(request: Request, env: Env): Promise<Response> {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="UTF-8">
       <title>Spotify Proxy</title>
       <style>
         body {
@@ -257,7 +258,7 @@ async function handleRoot(request: Request, env: Env): Promise<Response> {
 
   return new Response(html, {
     headers: {
-      "Content-Type": "text/html",
+      "Content-Type": "text/html; charset=utf-8",
       ...corsHeaders,
     },
   });
@@ -307,7 +308,7 @@ async function handleSetup(request: Request, env: Env): Promise<Response> {
   const html = await getSetupHTML();
   return new Response(html, {
     headers: {
-      "Content-Type": "text/html",
+      "Content-Type": "text/html; charset=utf-8",
       ...corsHeaders,
     },
   });
@@ -324,7 +325,7 @@ async function handleCredentials(
   const html = await getCredentialsHTML(undefined, request.url);
   return new Response(html, {
     headers: {
-      "Content-Type": "text/html",
+      "Content-Type": "text/html; charset=utf-8",
       ...corsHeaders,
     },
   });
@@ -374,7 +375,7 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
   return new Response(
     `
     <html>
-      <head><title>OAuth Success</title></head>
+      <head><meta charset="UTF-8"><title>OAuth Success</title></head>
       <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
         <h1>✅ OAuth Setup Complete!</h1>
         <p>Your Spotify account has been successfully connected.</p>
@@ -390,7 +391,7 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
   `,
     {
       headers: {
-        "Content-Type": "text/html",
+        "Content-Type": "text/html; charset=utf-8",
         ...corsHeaders,
       },
     }
@@ -631,6 +632,7 @@ async function getSetupHTML(): Promise<string> {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="UTF-8">
       <title>Spotify Proxy Setup</title>
       <style>
         body {
@@ -729,6 +731,7 @@ async function getCredentialsHTML(
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="UTF-8">
       <title>Spotify Proxy - Setup</title>
       <style>
         body {
