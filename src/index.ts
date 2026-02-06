@@ -11,6 +11,7 @@ export interface Env {
   SPOTIFY_CLIENT_SECRET: string;
   API_KEY: string;
   ENVIRONMENT: string;
+  CF_ACCOUNT_ID: string;
 }
 
 // CORS headers for all responses
@@ -322,7 +323,7 @@ async function handleCredentials(
   env: Env
 ): Promise<Response> {
   // Show credentials setup page (secrets-based approach only)
-  const html = await getCredentialsHTML(undefined, request.url);
+  const html = await getCredentialsHTML(undefined, request.url, env);
   return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
@@ -720,12 +721,22 @@ async function getSetupHTML(): Promise<string> {
 
 async function getCredentialsHTML(
   errorMessage?: string,
-  requestUrl?: string
+  requestUrl?: string,
+  env?: Env
 ): Promise<string> {
   const origin = requestUrl
     ? new URL(requestUrl).origin
     : "https://your-worker.workers.dev";
   const apiKey = generateSecureApiKey();
+
+  // Build direct link to worker settings in CF dashboard
+  const workerName = requestUrl
+    ? new URL(requestUrl).hostname.split(".")[0]
+    : "";
+  const cfAccountId = env?.CF_ACCOUNT_ID || "";
+  const dashboardUrl = cfAccountId && workerName
+    ? `https://dash.cloudflare.com/${cfAccountId}/workers/services/view/${workerName}/production/settings`
+    : "https://dash.cloudflare.com/";
 
   return `
     <!DOCTYPE html>
@@ -879,14 +890,13 @@ async function getCredentialsHTML(
             <h3>Set API_KEY Secret in Cloudflare</h3>
             <p><strong>Open your Cloudflare Workers dashboard:</strong></p>
 
-            <a href="https://dash.cloudflare.com/" target="_blank" class="button dashboard">Open Cloudflare Dashboard</a>
+            <a href="${dashboardUrl}" target="_blank" class="button dashboard">Open Worker Settings</a>
 
             <div style="margin: 20px 0;">
               <p><strong>Instructions:</strong></p>
               <ol>
-                <li>Navigate to <strong>Workers & Pages</strong> → <strong>Your Worker</strong></li>
-                <li>Go to <strong>Settings</strong> → <strong>Variables</strong></li>
-                <li>Under <strong>"Environment Variables"</strong>, click <strong>"Add variable"</strong></li>
+                <li>On the Settings page, find <strong>"Variables and Secrets"</strong></li>
+                <li>Click <strong>"Add"</strong></li>
                 <li>Set <strong>Variable name:</strong> <code>API_KEY</code></li>
                 <li>Set <strong>Value:</strong> paste the API key from above</li>
                 <li>Make sure to check <strong>"Encrypt"</strong> (this makes it a secret)</li>

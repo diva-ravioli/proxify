@@ -239,7 +239,7 @@ async function handleSetup(request, env) {
   });
 }
 async function handleCredentials(request, env) {
-  const html = await getCredentialsHTML(void 0, request.url);
+  const html = await getCredentialsHTML(void 0, request.url, env);
   return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
@@ -570,9 +570,12 @@ async function getSetupHTML() {
     </html>
   `;
 }
-async function getCredentialsHTML(errorMessage, requestUrl) {
+async function getCredentialsHTML(errorMessage, requestUrl, env) {
   const origin = requestUrl ? new URL(requestUrl).origin : "https://your-worker.workers.dev";
   const apiKey = generateSecureApiKey();
+  const workerName = requestUrl ? new URL(requestUrl).hostname.split(".")[0] : "";
+  const cfAccountId = env?.CF_ACCOUNT_ID || "";
+  const dashboardUrl = cfAccountId && workerName ? `https://dash.cloudflare.com/${cfAccountId}/workers/services/view/${workerName}/production/settings` : "https://dash.cloudflare.com/";
   return `
     <!DOCTYPE html>
     <html>
@@ -725,14 +728,13 @@ async function getCredentialsHTML(errorMessage, requestUrl) {
             <h3>Set API_KEY Secret in Cloudflare</h3>
             <p><strong>Open your Cloudflare Workers dashboard:</strong></p>
 
-            <a href="https://dash.cloudflare.com/" target="_blank" class="button dashboard">Open Cloudflare Dashboard</a>
+            <a href="${dashboardUrl}" target="_blank" class="button dashboard">Open Worker Settings</a>
 
             <div style="margin: 20px 0;">
               <p><strong>Instructions:</strong></p>
               <ol>
-                <li>Navigate to <strong>Workers & Pages</strong> \u2192 <strong>Your Worker</strong></li>
-                <li>Go to <strong>Settings</strong> \u2192 <strong>Variables</strong></li>
-                <li>Under <strong>"Environment Variables"</strong>, click <strong>"Add variable"</strong></li>
+                <li>On the Settings page, find <strong>"Variables and Secrets"</strong></li>
+                <li>Click <strong>"Add"</strong></li>
                 <li>Set <strong>Variable name:</strong> <code>API_KEY</code></li>
                 <li>Set <strong>Value:</strong> paste the API key from above</li>
                 <li>Make sure to check <strong>"Encrypt"</strong> (this makes it a secret)</li>
