@@ -13,6 +13,7 @@ var src_default = {
     }
     try {
       const publicEndpoints = [
+        "/",
         "/health",
         "/credentials",
         "/setup",

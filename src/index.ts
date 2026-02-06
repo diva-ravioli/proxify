@@ -37,6 +37,7 @@ export default {
     try {
       // Require API key authentication for all endpoints except health and setup endpoints
       const publicEndpoints = [
+        "/",
         "/health",
         "/credentials",
         "/setup",
