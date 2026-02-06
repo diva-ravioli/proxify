@@ -148,28 +148,28 @@ async function handleRoot(request, env) {
     </head>
     <body>
       <div class="container">
-        <h1>\u{1F3B5} Spotify Proxy</h1>
+        <h1>Spotify Proxy</h1>
         <p>Your personal Spotify API proxy</p>
 
         <div class="info" style="background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 20px 0;">
-          <h3>\u{1F510} Secure Authentication</h3>
+          <h3>Secure Authentication</h3>
           <p>This proxy is secured with API key authentication via Cloudflare secrets. Include your API key in requests:</p>
           <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace;">Authorization: Bearer YOUR_API_KEY</code>
         </div>
 
         ${setupStatus === "complete" ? `
           <div class="status complete">
-            \u2705 <strong>Setup Complete!</strong><br>
+            <strong>Setup Complete!</strong><br>
             Your Spotify account is connected and ready to use.
           </div>
         ` : setupStatus === "credentials_only" ? `
           <div class="status partial">
-            \u26A0\uFE0F <strong>Credentials Set, OAuth Pending</strong><br>
+            <strong>Credentials Set, OAuth Pending</strong><br>
             Connect your Spotify account to start using the proxy.
           </div>
         ` : `
           <div class="status pending">
-            \u{1F527} <strong>Setup Required</strong><br>
+            <strong>Setup Required</strong><br>
             Enter your Spotify app credentials to get started.
           </div>
         `}
@@ -279,7 +279,7 @@ async function handleCallback(request, env) {
     <html>
       <head><meta charset="UTF-8"><title>OAuth Success</title></head>
       <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-        <h1>\u2705 OAuth Setup Complete!</h1>
+        <h1>OAuth Setup Complete!</h1>
         <p>Your Spotify account has been successfully connected.</p>
         <p>You can now use the API endpoints:</p>
         <ul style="display: inline-block; text-align: left;">
@@ -536,10 +536,10 @@ async function getSetupHTML() {
     </head>
     <body>
       <div class="container">
-        <h1>\u{1F3B5} Spotify Proxy Setup</h1>
+        <h1>Spotify Proxy Setup</h1>
 
         <div class="info">
-          <h3>\u2705 Credentials Configured</h3>
+          <h3>Credentials Configured</h3>
           <p>Your Spotify app credentials are ready. Now connect your account!</p>
         </div>
 
@@ -547,7 +547,7 @@ async function getSetupHTML() {
           <h3>Step 1: Authorize with Spotify</h3>
           <p>Click the button below to connect your Spotify account:</p>
           <form method="POST">
-            <button type="submit" class="button">\u{1F517} Connect Spotify Account</button>
+            <button type="submit" class="button">Connect Spotify Account</button>
           </form>
         </div>
 
@@ -700,32 +700,32 @@ async function getCredentialsHTML(errorMessage, requestUrl) {
     </head>
     <body>
       <div class="container">
-        <h1>\u{1F510} Spotify Proxy Setup</h1>
+        <h1>Spotify Proxy Setup</h1>
 
         <div class="warning">
-          <h3>\u26A0\uFE0F Secure Setup Required</h3>
+          <h3>Secure Setup Required</h3>
           <p>Your Spotify proxy needs both an API key and Spotify credentials configured as Cloudflare secrets for maximum security.</p>
         </div>
 
-        ${errorMessage ? `<div class="error">\u274C ${errorMessage}</div>` : ""}
+        ${errorMessage ? `<div class="error">${errorMessage}</div>` : ""}
 
         <!-- API Key Section -->
         <div class="section">
-          <h2>\u{1F511} Step 1: API Key Setup</h2>
+          <h2>Step 1: API Key Setup</h2>
 
           <div class="step">
             <h3>Generate Your API Key</h3>
             <p>We've generated a secure API key for you:</p>
             <div class="api-key" id="apiKey">${apiKey}</div>
-            <button class="button secondary" onclick="copyApiKey()">\u{1F4CB} Copy API Key</button>
-            <button class="button secondary" onclick="generateNewKey()">\u{1F504} Generate New Key</button>
+            <button class="button secondary" onclick="copyApiKey()">Copy API Key</button>
+            <button class="button secondary" onclick="generateNewKey()">Generate New Key</button>
           </div>
 
           <div class="step">
             <h3>Set API_KEY Secret in Cloudflare</h3>
             <p><strong>Open your Cloudflare Workers dashboard:</strong></p>
 
-            <a href="https://dash.cloudflare.com/" target="_blank" class="button dashboard">\u{1F329}\uFE0F Open Cloudflare Dashboard</a>
+            <a href="https://dash.cloudflare.com/" target="_blank" class="button dashboard">Open Cloudflare Dashboard</a>
 
             <div style="margin: 20px 0;">
               <p><strong>Instructions:</strong></p>
@@ -735,7 +735,7 @@ async function getCredentialsHTML(errorMessage, requestUrl) {
                 <li>Under <strong>"Environment Variables"</strong>, click <strong>"Add variable"</strong></li>
                 <li>Set <strong>Variable name:</strong> <code>API_KEY</code></li>
                 <li>Set <strong>Value:</strong> paste the API key from above</li>
-                <li>\u2705 Make sure to check <strong>"Encrypt"</strong> (this makes it a secret)</li>
+                <li>Make sure to check <strong>"Encrypt"</strong> (this makes it a secret)</li>
                 <li>Click <strong>"Save and deploy"</strong></li>
               </ol>
             </div>
@@ -744,7 +744,7 @@ async function getCredentialsHTML(errorMessage, requestUrl) {
 
         <!-- Spotify Credentials Section -->
         <div class="section">
-          <h2>\u{1F3B5} Step 2: Spotify App Setup</h2>
+          <h2>Step 2: Spotify App Setup</h2>
 
           <div class="info">
             <h3>Get Spotify Credentials:</h3>
@@ -764,14 +764,14 @@ async function getCredentialsHTML(errorMessage, requestUrl) {
               <strong>Secret 1:</strong><br>
               Variable name: <code>SPOTIFY_CLIENT_ID</code><br>
               Value: Your Spotify Client ID<br>
-              \u2705 Check "Encrypt"
+              Check "Encrypt"
             </div>
 
             <div style="margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;">
               <strong>Secret 2:</strong><br>
               Variable name: <code>SPOTIFY_CLIENT_SECRET</code><br>
               Value: Your Spotify Client Secret<br>
-              \u2705 Check "Encrypt"
+              Check "Encrypt"
             </div>
           </div>
         </div>
@@ -780,7 +780,7 @@ async function getCredentialsHTML(errorMessage, requestUrl) {
 
         <!-- Next Steps -->
         <div class="step">
-          <h3>\u{1F680} Step 3: Complete Setup</h3>
+          <h3>Step 3: Complete Setup</h3>
           <p>After setting all secrets in Cloudflare Dashboard:</p>
           <ol>
             <li>Refresh this page to verify secrets are configured</li>
@@ -789,13 +789,13 @@ async function getCredentialsHTML(errorMessage, requestUrl) {
           </ol>
 
           <div style="margin: 20px 0;">
-            <a href="/health" class="button" target="_blank">\u{1F50D} Check Configuration Status</a>
-            <a href="/setup" class="button">\u25B6\uFE0F Continue to OAuth Setup</a>
+            <a href="/health" class="button" target="_blank">Check Configuration Status</a>
+            <a href="/setup" class="button">Continue to OAuth Setup</a>
           </div>
         </div>
 
         <div class="info">
-          <h3>\u{1F510} Why Use Cloudflare Secrets?</h3>
+          <h3>Why Use Cloudflare Secrets?</h3>
           <ul>
             <li><strong>Maximum Security</strong> - Encrypted and never exposed in code or logs</li>
             <li><strong>Environment Isolation</strong> - Different secrets for development/production</li>
@@ -814,7 +814,7 @@ async function getCredentialsHTML(errorMessage, requestUrl) {
           navigator.clipboard.writeText(currentApiKey).then(() => {
             const btn = event.target;
             const originalText = btn.textContent;
-            btn.textContent = '\u2705 Copied!';
+            btn.textContent = 'Copied!';
             setTimeout(() => btn.textContent = originalText, 2000);
           });
         }
