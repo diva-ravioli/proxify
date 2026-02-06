@@ -575,7 +575,7 @@ async function getCredentialsHTML(errorMessage, requestUrl, env) {
   const apiKey = generateSecureApiKey();
   const workerName = requestUrl ? new URL(requestUrl).hostname.split(".")[0] : "";
   const cfAccountId = env?.CF_ACCOUNT_ID || "";
-  const dashboardUrl = cfAccountId && workerName ? `https://dash.cloudflare.com/${cfAccountId}/workers/services/view/${workerName}/production/settings` : "https://dash.cloudflare.com/";
+  const dashboardUrl = cfAccountId && workerName ? `https://dash.cloudflare.com/${cfAccountId}/workers/services/view/${workerName}/production/settings#variables` : "https://dash.cloudflare.com/";
   return `
     <!DOCTYPE html>
     <html>

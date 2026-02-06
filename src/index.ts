@@ -735,7 +735,7 @@ async function getCredentialsHTML(
     : "";
   const cfAccountId = env?.CF_ACCOUNT_ID || "";
   const dashboardUrl = cfAccountId && workerName
-    ? `https://dash.cloudflare.com/${cfAccountId}/workers/services/view/${workerName}/production/settings`
+    ? `https://dash.cloudflare.com/${cfAccountId}/workers/services/view/${workerName}/production/settings#variables`
     : "https://dash.cloudflare.com/";
 
   return `
