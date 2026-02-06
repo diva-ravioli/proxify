@@ -348,6 +348,16 @@
     </div>
 
     <script>
+      // Randomize worker name on load
+      (function () {
+        const adj = ['swift','cool','bright','silent','bold','calm','keen','quick','wild','fresh'];
+        const noun = ['proxy','relay','bridge','tunnel','pipe','link','gate','node','hub','port'];
+        const n = Math.floor(Math.random() * 10000);
+        const name = adj[Math.floor(Math.random() * adj.length)] + '-' +
+                     noun[Math.floor(Math.random() * noun.length)] + '-' + n;
+        document.getElementById('worker-name').value = name;
+      })();
+
       const CF_API = "https://api.cloudflare.com/client/v4";
       // Source repo for fetching the compiled worker
       const WORKER_SOURCE_URL =
