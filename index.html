@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spotify Proxy - Deploy Your Personal API</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: linear-gradient(135deg, #191414 0%, #1db954 200%);
+        min-height: 100vh;
+        color: #333;
+        padding: 20px;
+      }
+      .container {
+        max-width: 700px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        padding: 40px;
+        text-align: center;
+      }
+      h1 {
+        color: #1db954;
+        margin-bottom: 8px;
+        font-size: 2.2em;
+      }
+      .subtitle {
+        color: #888;
+        margin-bottom: 32px;
+        font-size: 1.1em;
+      }
+      .btn {
+        display: inline-block;
+        background: #1db954;
+        color: white;
+        padding: 16px 32px;
+        border: none;
+        border-radius: 10px;
+        font-size: 18px;
+        font-weight: 700;
+        cursor: pointer;
+        text-decoration: none;
+        transition: background 0.2s;
+        margin: 8px;
+      }
+      .btn:hover {
+        background: #1ed760;
+      }
+      .btn-secondary {
+        background: #555;
+        font-size: 15px;
+        padding: 12px 24px;
+      }
+      .btn-secondary:hover {
+        background: #777;
+      }
+      .badge {
+        display: inline-block;
+        background: #e8f5e9;
+        color: #1db954;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.85em;
+        font-weight: 600;
+        margin-bottom: 24px;
+      }
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin: 36px 0;
+        text-align: left;
+      }
+      .feature {
+        background: #fafafa;
+        padding: 18px;
+        border-radius: 10px;
+        border: 1px solid #eee;
+      }
+      .feature h3 {
+        color: #1db954;
+        margin-bottom: 6px;
+        font-size: 0.95em;
+      }
+      .feature p {
+        color: #888;
+        font-size: 0.85em;
+        line-height: 1.4;
+        margin: 0;
+      }
+      .endpoints {
+        text-align: left;
+        max-width: 400px;
+        margin: 24px auto;
+      }
+      .endpoints li {
+        margin: 8px 0;
+        color: #555;
+        list-style: none;
+        padding-left: 0;
+      }
+      .endpoints code {
+        background: #f0f0f0;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        color: #1db954;
+      }
+      .footer {
+        margin-top: 36px;
+        font-size: 0.85em;
+        color: #aaa;
+      }
+      .footer a {
+        color: #888;
+        text-decoration: none;
+        margin: 0 8px;
+      }
+      .footer a:hover {
+        color: #1db954;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Spotify Proxy</h1>
+      <p class="subtitle">
+        Your personal Spotify API proxy on Cloudflare Workers
+      </p>
+
+      <span class="badge">No GitHub account required</span>
+
+      <div>
+        <a href="./deploy-web.html" class="btn">Deploy Now</a>
+        <a
+          href="https://github.com/diva-ravioli/proxify"
+          class="btn btn-secondary"
+          >View on GitHub</a
+        >
+      </div>
+
+      <div class="features">
+        <div class="feature">
+          <h3>Direct Deploy</h3>
+          <p>
+            Deploy to your Cloudflare account in under 2 minutes, right from
+            your browser
+          </p>
+        </div>
+        <div class="feature">
+          <h3>Free Tier</h3>
+          <p>
+            Runs entirely on Cloudflare Workers free plan &mdash; no ongoing
+            costs
+          </p>
+        </div>
+        <div class="feature">
+          <h3>Secure</h3>
+          <p>
+            API key auth, encrypted secrets, server-side OAuth &mdash;
+            credentials never exposed
+          </p>
+        </div>
+        <div class="feature">
+          <h3>Web Setup</h3>
+          <p>
+            Guided setup UI built right into the worker &mdash; no CLI needed
+          </p>
+        </div>
+      </div>
+
+      <h2 style="color: #1db954; margin-bottom: 12px">API Endpoints</h2>
+      <ul class="endpoints">
+        <li>
+          <code>/now-playing</code> &mdash; Current track and playback state
+        </li>
+        <li><code>/recent</code> &mdash; Recently played tracks</li>
+        <li><code>/health</code> &mdash; API status and configuration</li>
+      </ul>
+
+      <div class="footer">
+        <a href="https://github.com/diva-ravioli/proxify">GitHub</a>
+        <a href="https://github.com/diva-ravioli/proxify/issues">Issues</a>
+      </div>
+    </div>
+  </body>
+</html>

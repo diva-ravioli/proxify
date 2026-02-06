@@ -1,0 +1,31 @@
+name = "proxify"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[env.production]
+name = "proxify"
+
+[env.development]
+name = "proxify-dev"
+
+# KV namespace for storing tokens and user data
+# Note: The KV namespace ID is set dynamically during deployment.
+# Do NOT hardcode IDs here - they are account-specific.
+# The deployment workflow/script will create the namespace and inject the ID.
+# For local development, run: npx wrangler kv:namespace create SPOTIFY_DATA
+# Then paste the resulting id below.
+# [[kv_namespaces]]
+# binding = "SPOTIFY_DATA"
+# id = "<your-kv-namespace-id>"
+
+# Environment variables (set these via wrangler secret put)
+[vars]
+ENVIRONMENT = "development"
+
+# For deployment, you'll need to set these secrets via Cloudflare Dashboard:
+# API_KEY - Your secure API key for authentication
+# SPOTIFY_CLIENT_ID - Your Spotify app's Client ID
+# SPOTIFY_CLIENT_SECRET - Your Spotify app's Client Secret
+
+# All secrets can be set via the Cloudflare Dashboard:
+# Workers & Pages → Your Worker → Settings → Variables → Add variable (with Encrypt checked)

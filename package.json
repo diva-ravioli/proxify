@@ -1,0 +1,45 @@
+{
+  "name": "proxify",
+  "version": "1.0.0",
+  "description": "A personal Spotify API proxy deployed via Cloudflare Workers",
+  "main": "src/index.ts",
+  "homepage": "https://github.com/diva-ravioli/proxify",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/diva-ravioli/proxify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/diva-ravioli/proxify/issues"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "esbuild src/index.ts --bundle --format=esm --target=es2022 --outfile=dist/worker.mjs",
+    "deploy": "wrangler deploy",
+    "test": "wrangler dev --test",
+    "start": "wrangler dev"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "wrangler": "^3.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "keywords": [
+    "spotify",
+    "proxy",
+    "cloudflare",
+    "workers",
+    "oauth",
+    "api",
+    "music",
+    "now-playing",
+    "serverless"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

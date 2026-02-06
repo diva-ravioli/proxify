@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deploy Spotify Proxy to Cloudflare</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: linear-gradient(135deg, #191414 0%, #1db954 200%);
+        min-height: 100vh;
+        color: #333;
+        padding: 20px;
+      }
+      .container {
+        max-width: 640px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        padding: 40px;
+      }
+      h1 {
+        color: #1db954;
+        text-align: center;
+        margin-bottom: 6px;
+        font-size: 1.8em;
+      }
+      .subtitle {
+        text-align: center;
+        color: #888;
+        margin-bottom: 32px;
+        font-size: 0.95em;
+      }
+      .step {
+        margin: 24px 0;
+        padding: 20px;
+        background: #fafafa;
+        border-radius: 10px;
+        border: 1px solid #eee;
+      }
+      .step-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .step-num {
+        background: #1db954;
+        color: white;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+      .step-title {
+        font-weight: 700;
+        font-size: 1.05em;
+        color: #222;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        font-size: 0.9em;
+        color: #444;
+      }
+      input[type="text"],
+      input[type="password"] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        font-size: 15px;
+        transition: border-color 0.2s;
+        font-family: inherit;
+      }
+      input:focus {
+        outline: none;
+        border-color: #1db954;
+      }
+      .field {
+        margin-bottom: 14px;
+      }
+      .hint {
+        font-size: 0.82em;
+        color: #888;
+        margin-top: 4px;
+      }
+      .hint a {
+        color: #1db954;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: #1db954;
+        color: white;
+        padding: 14px 28px;
+        border: none;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.2s;
+        width: 100%;
+      }
+      .btn:hover {
+        background: #1ed760;
+      }
+      .btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .btn-sm {
+        padding: 8px 16px;
+        font-size: 13px;
+        width: auto;
+        border-radius: 6px;
+      }
+      #log-container {
+        display: none;
+        margin-top: 20px;
+        background: #191414;
+        color: #b3b3b3;
+        border-radius: 10px;
+        padding: 16px;
+        font-family: "SF Mono", "Fira Code", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      #log-container .log-ok {
+        color: #1db954;
+      }
+      #log-container .log-err {
+        color: #e74c3c;
+      }
+      #log-container .log-info {
+        color: #3498db;
+      }
+      #log-container .log-spin::before {
+        content: "";
+        display: inline-block;
+      }
+      #result {
+        display: none;
+        margin-top: 24px;
+        padding: 24px;
+        background: #e8f5e9;
+        border-radius: 10px;
+        border: 2px solid #1db954;
+        text-align: center;
+      }
+      #result h2 {
+        color: #1db954;
+        margin-bottom: 8px;
+      }
+      #result .url {
+        display: block;
+        margin: 12px 0;
+        font-family: "SF Mono", "Fira Code", monospace;
+        font-size: 1.05em;
+        font-weight: 700;
+        color: #191414;
+        word-break: break-all;
+      }
+      #result .url a {
+        color: #1db954;
+        text-decoration: none;
+      }
+      #result .url a:hover {
+        text-decoration: underline;
+      }
+      #error-box {
+        display: none;
+        margin-top: 20px;
+        padding: 16px;
+        background: #fde8e8;
+        border-radius: 10px;
+        border: 1px solid #e74c3c;
+        color: #c0392b;
+      }
+      .next-steps {
+        text-align: left;
+        margin-top: 16px;
+      }
+      .next-steps li {
+        margin: 6px 0;
+        color: #555;
+      }
+      .cors-fallback {
+        display: none;
+        margin-top: 20px;
+        padding: 20px;
+        background: #fff8e1;
+        border-radius: 10px;
+        border: 1px solid #ffc107;
+      }
+      .cors-fallback pre {
+        background: #191414;
+        color: #b3b3b3;
+        padding: 16px;
+        border-radius: 8px;
+        overflow-x: auto;
+        font-size: 12px;
+        line-height: 1.5;
+        margin-top: 12px;
+      }
+      .copy-btn {
+        background: #555;
+        color: white;
+        border: none;
+        padding: 4px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        float: right;
+        margin-top: -4px;
+      }
+      .copy-btn:hover {
+        background: #777;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Deploy Spotify Proxy</h1>
+      <p class="subtitle">
+        Deploy directly to Cloudflare Workers. No GitHub account needed.
+      </p>
+
+      <div class="step">
+        <div class="step-header">
+          <span class="step-num">1</span>
+          <span class="step-title">Cloudflare Credentials</span>
+        </div>
+        <div class="field">
+          <label for="api-token">API Token</label>
+          <input
+            type="password"
+            id="api-token"
+            placeholder="Paste your Cloudflare API token"
+          />
+          <p class="hint">
+            Need a token?
+            <a
+              href="https://dash.cloudflare.com/profile/api-tokens"
+              target="_blank"
+              >Create one here</a
+            >
+            with <strong>Workers Scripts: Edit</strong> and
+            <strong>Workers KV Storage: Edit</strong> permissions.
+          </p>
+        </div>
+        <div class="field">
+          <label for="account-id">Account ID</label>
+          <input
+            type="text"
+            id="account-id"
+            placeholder="Your 32-character Cloudflare Account ID"
+          />
+          <p class="hint">
+            Find it in your
+            <a href="https://dash.cloudflare.com" target="_blank"
+              >Cloudflare Dashboard</a
+            >
+            URL:
+            <code
+              >dash.cloudflare.com/<strong>your-account-id</strong>/...</code
+            >
+          </p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header">
+          <span class="step-num">2</span>
+          <span class="step-title">Worker Name</span>
+        </div>
+        <div class="field">
+          <label for="worker-name">Name (used in the URL)</label>
+          <input
+            type="text"
+            id="worker-name"
+            value="proxify"
+            placeholder="proxify"
+          />
+          <p class="hint">
+            Your worker will be available at
+            <code
+              >https://<strong>name</strong>.your-subdomain.workers.dev</code
+            >
+          </p>
+        </div>
+      </div>
+
+      <div style="margin-top: 28px">
+        <button class="btn" id="deploy-btn" onclick="deploy()">
+          Deploy to Cloudflare Workers
+        </button>
+      </div>
+
+      <div id="log-container"></div>
+
+      <div id="result">
+        <h2>Deployment Complete!</h2>
+        <p>Your Spotify Proxy is live at:</p>
+        <span class="url"
+          ><a id="worker-url" href="#" target="_blank"></a
+        ></span>
+        <p style="margin-top: 16px; font-weight: 600">Next steps:</p>
+        <ol class="next-steps">
+          <li>Visit the URL above to open the setup page</li>
+          <li>
+            Follow the instructions to set your API key and Spotify credentials
+            as Cloudflare secrets
+          </li>
+          <li>Complete the Spotify OAuth flow</li>
+          <li>Start using your API endpoints!</li>
+        </ol>
+      </div>
+
+      <div id="error-box"></div>
+
+      <div id="cors-fallback" class="cors-fallback">
+        <strong>Browser-based deployment is blocked by CORS.</strong>
+        <p style="margin-top: 8px; font-size: 0.9em">
+          Run this command in your terminal instead (requires
+          <a href="https://nodejs.org" target="_blank">Node.js</a>):
+        </p>
+        <pre id="fallback-script"></pre>
+        <button class="copy-btn" onclick="copyFallback()">Copy</button>
+      </div>
+    </div>
+
+    <script>
+      const CF_API = "https://api.cloudflare.com/client/v4";
+      // Source repo for fetching the compiled worker
+      const WORKER_SOURCE_URL =
+        "https://raw.githubusercontent.com/diva-ravioli/proxify/main/dist/worker.mjs";
+
+      function log(msg, cls = "") {
+        const el = document.getElementById("log-container");
+        el.style.display = "block";
+        el.innerHTML += `<div class="${cls}">${msg}</div>`;
+        el.scrollTop = el.scrollHeight;
+      }
+
+      function showError(msg) {
+        const el = document.getElementById("error-box");
+        el.style.display = "block";
+        el.innerHTML = `<strong>Deployment failed:</strong> ${msg}`;
+      }
+
+      async function cfFetch(path, token, options = {}) {
+        const resp = await fetch(`${CF_API}${path}`, {
+          ...options,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ...(options.headers || {}),
+          },
+        });
+        return resp;
+      }
+
+      async function deploy() {
+        const token = document.getElementById("api-token").value.trim();
+        const accountId = document.getElementById("account-id").value.trim();
+        const workerName =
+          document.getElementById("worker-name").value.trim() || "proxify";
+
+        if (!token || !accountId) {
+          showError("Please fill in both API Token and Account ID.");
+          return;
+        }
+
+        const btn = document.getElementById("deploy-btn");
+        btn.disabled = true;
+        btn.textContent = "Deploying...";
+        document.getElementById("log-container").innerHTML = "";
+        document.getElementById("log-container").style.display = "block";
+        document.getElementById("result").style.display = "none";
+        document.getElementById("error-box").style.display = "none";
+        document.getElementById("cors-fallback").style.display = "none";
+
+        try {
+          // Step 1: Verify token
+          log("Verifying API token...", "log-info");
+          let resp;
+          try {
+            resp = await cfFetch("/user/tokens/verify", token);
+          } catch (e) {
+            // CORS failure
+            log(
+              "CORS error - browser cannot reach Cloudflare API directly.",
+              "log-err",
+            );
+            showCorsFallback(token, accountId, workerName);
+            btn.disabled = false;
+            btn.textContent = "Deploy to Cloudflare Workers";
+            return;
+          }
+          const verifyData = await resp.json();
+          if (!verifyData.success) {
+            throw new Error(
+              "Invalid API token. Please check your token and try again.",
+            );
+          }
+          log("API token verified", "log-ok");
+
+          // Step 2: Fetch worker source
+          log("Fetching worker source code...", "log-info");
+          const sourceResp = await fetch(WORKER_SOURCE_URL);
+          if (!sourceResp.ok) {
+            throw new Error(
+              `Failed to fetch worker source (HTTP ${sourceResp.status}). Make sure dist/worker.mjs exists in the repo.`,
+            );
+          }
+          const workerCode = await sourceResp.text();
+          log(
+            "Worker source fetched (" +
+              Math.round(workerCode.length / 1024) +
+              " KB)",
+            "log-ok",
+          );
+
+          // Step 3: Create KV namespace
+          log("Creating KV namespace...", "log-info");
+          let kvId = null;
+
+          // First check if it already exists
+          const listResp = await cfFetch(
+            `/accounts/${accountId}/storage/kv/namespaces?per_page=100`,
+            token,
+          );
+          const listData = await listResp.json();
+          if (listData.success && listData.result) {
+            const existing = listData.result.find(
+              (ns) =>
+                ns.title === `${workerName}-SPOTIFY_DATA` ||
+                ns.title.includes("SPOTIFY_DATA"),
+            );
+            if (existing) {
+              kvId = existing.id;
+              log(`Reusing existing KV namespace: ${existing.title}`, "log-ok");
+            }
+          }
+
+          if (!kvId) {
+            const kvResp = await cfFetch(
+              `/accounts/${accountId}/storage/kv/namespaces`,
+              token,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: `${workerName}-SPOTIFY_DATA` }),
+              },
+            );
+            const kvData = await kvResp.json();
+            if (!kvData.success) {
+              const errMsg =
+                kvData.errors?.map((e) => e.message).join(", ") ||
+                "Unknown error";
+              throw new Error(
+                `KV namespace creation failed: ${errMsg}. Make sure your token has Workers KV Storage: Edit permission.`,
+              );
+            }
+            kvId = kvData.result.id;
+            log("KV namespace created: " + kvId, "log-ok");
+          }
+
+          // Step 4: Upload worker
+          log("Uploading worker script...", "log-info");
+          const metadata = {
+            main_module: "worker.mjs",
+            bindings: [
+              {
+                type: "kv_namespace",
+                name: "SPOTIFY_DATA",
+                namespace_id: kvId,
+              },
+              { type: "plain_text", name: "ENVIRONMENT", text: "production" },
+            ],
+            compatibility_date: "2024-01-01",
+          };
+
+          const formData = new FormData();
+          formData.append(
+            "metadata",
+            new Blob([JSON.stringify(metadata)], { type: "application/json" }),
+          );
+          formData.append(
+            "worker.mjs",
+            new Blob([workerCode], { type: "application/javascript+module" }),
+            "worker.mjs",
+          );
+
+          const uploadResp = await cfFetch(
+            `/accounts/${accountId}/workers/scripts/${workerName}`,
+            token,
+            {
+              method: "PUT",
+              body: formData,
+            },
+          );
+          const uploadData = await uploadResp.json();
+          if (!uploadData.success) {
+            const errMsg =
+              uploadData.errors?.map((e) => e.message).join(", ") ||
+              "Unknown error";
+            throw new Error(
+              `Worker upload failed: ${errMsg}. Make sure your token has Workers Scripts: Edit permission.`,
+            );
+          }
+          log("Worker script uploaded", "log-ok");
+
+          // Step 5: Enable workers.dev subdomain for the script
+          log("Enabling workers.dev route...", "log-info");
+          try {
+            await cfFetch(
+              `/accounts/${accountId}/workers/scripts/${workerName}/subdomain`,
+              token,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled: true }),
+              },
+            );
+            log("workers.dev route enabled", "log-ok");
+          } catch {
+            log(
+              "Could not enable workers.dev route (may already be active)",
+              "log-info",
+            );
+          }
+
+          // Step 6: Get the subdomain to build the URL
+          log("Fetching worker URL...", "log-info");
+          let workerUrl = `https://${workerName}.workers.dev`;
+          try {
+            const subResp = await cfFetch(
+              `/accounts/${accountId}/workers/subdomain`,
+              token,
+            );
+            const subData = await subResp.json();
+            if (subData.success && subData.result?.subdomain) {
+              workerUrl = `https://${workerName}.${subData.result.subdomain}.workers.dev`;
+            }
+          } catch {
+            // Use default URL format
+          }
+
+          log("Deployment complete!", "log-ok");
+
+          // Show result
+          const urlEl = document.getElementById("worker-url");
+          urlEl.href = workerUrl;
+          urlEl.textContent = workerUrl;
+          document.getElementById("result").style.display = "block";
+        } catch (err) {
+          log("Error: " + err.message, "log-err");
+          showError(err.message);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Deploy to Cloudflare Workers";
+        }
+      }
+
+      function showCorsFallback(token, accountId, workerName) {
+        const el = document.getElementById("cors-fallback");
+        el.style.display = "block";
+
+        // Generate a one-liner command using npx and the standalone script
+        const script = `curl -sL https://raw.githubusercontent.com/diva-ravioli/proxify/main/deploy-standalone.js -o /tmp/deploy-proxify.js && node /tmp/deploy-proxify.js`;
+
+        document.getElementById("fallback-script").textContent = script;
+      }
+
+      function copyFallback() {
+        const text = document.getElementById("fallback-script").textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          const btn = event.target;
+          btn.textContent = "Copied!";
+          setTimeout(() => (btn.textContent = "Copy"), 2000);
+        });
+      }
+    </script>
+  </body>
+</html>
