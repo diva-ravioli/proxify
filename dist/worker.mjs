@@ -926,7 +926,7 @@ async function getCredentialsHTML(errorMessage, requestUrl, env) {
                 <li>Click <strong>"Add"</strong></li>
                 <li>Set <strong>Variable name:</strong> <code>API_KEY</code></li>
                 <li>Set <strong>Value:</strong> paste the API key from above</li>
-                <li>Make sure to check <strong>"Encrypt"</strong> (this makes it a secret)</li>
+                <li>Leave <strong>"Encrypt"</strong> unchecked so you can retrieve it later</li>
                 <li>Click <strong>"Save and deploy"</strong></li>
               </ol>
             </div>
