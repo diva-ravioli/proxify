@@ -8,12 +8,18 @@ export interface Env {
   SPOTIFY_CLIENT_SECRET: string;
   API_KEY: string;
   ENVIRONMENT: string;
+  WORKER_NAME: string;
   CF_ACCOUNT_ID: string;
   CF_API_TOKEN: string;
 }
 
 const WORKER_SOURCE_URL =
   "https://raw.githubusercontent.com/diva-ravioli/proxify/main/dist/worker.mjs";
+
+// ── In-memory cache to stay within KV free tier (1,000 writes/day) ──
+// Persists across requests within the same Worker isolate, avoiding
+// redundant KV reads. Resets when the isolate is recycled.
+let _cachedTokens: { data: any; expiresAt: number } | null = null;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,10 +41,6 @@ export default {
   ): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
-
-    // Store worker name for auto-updates (derived from hostname)
-    const workerName = url.hostname.split(".")[0];
-    ctx.waitUntil(env.SPOTIFY_DATA.put("_worker_name", workerName));
 
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
@@ -131,7 +133,7 @@ export default {
  * Self-update: fetch latest worker source and re-deploy if changed.
  */
 async function checkForUpdates(env: Env): Promise<void> {
-  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return;
+  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID || !env.WORKER_NAME) return;
 
   try {
     // Fetch latest source from repo
@@ -151,15 +153,13 @@ async function checkForUpdates(env: Env): Promise<void> {
     const storedHash = await env.SPOTIFY_DATA.get("_worker_hash");
     if (storedHash === latestHash) return; // No update needed
 
-    // Determine worker name from KV or fallback
-    // We store it during first update check
-    let workerName = await env.SPOTIFY_DATA.get("_worker_name");
-    if (!workerName) {
-      // Try to get it from the account's worker list — skip update on first run,
-      // just store the current hash so next time we can compare
+    // First run — no hash stored yet, just save the current one
+    if (!storedHash) {
       await env.SPOTIFY_DATA.put("_worker_hash", latestHash);
       return;
     }
+
+    const workerName = env.WORKER_NAME;
 
     // Re-deploy with the new code
     const kvList = await fetch(
@@ -176,6 +176,7 @@ async function checkForUpdates(env: Env): Promise<void> {
     const bindings: any[] = [
       { type: "kv_namespace", name: "SPOTIFY_DATA", namespace_id: kvNamespace.id },
       { type: "plain_text", name: "ENVIRONMENT", text: env.ENVIRONMENT || "production" },
+      { type: "plain_text", name: "WORKER_NAME", text: env.WORKER_NAME },
       { type: "plain_text", name: "CF_ACCOUNT_ID", text: env.CF_ACCOUNT_ID },
       { type: "secret_text", name: "CF_API_TOKEN", text: env.CF_API_TOKEN },
     ];
@@ -639,8 +640,7 @@ async function handleCredentialsSubmit(
     return new Response("Auto-configuration not available (missing CF_API_TOKEN).", { status: 500 });
   }
 
-  const workerName = await env.SPOTIFY_DATA.get("_worker_name") ||
-    new URL(request.url).hostname.split(".")[0];
+  const workerName = env.WORKER_NAME || new URL(request.url).hostname.split(".")[0];
 
   const cfApi = "https://api.cloudflare.com/client/v4";
   const secretsUrl = `${cfApi}/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${workerName}/secrets`;
@@ -674,6 +674,7 @@ async function handleCredentialsSubmit(
   }
 
   // New credentials = fresh start — clear any old OAuth tokens
+  _cachedTokens = null;
   await env.SPOTIFY_DATA.delete("spotify_tokens");
 
   // Show a holding page that retries until the new secrets have propagated
@@ -749,13 +750,13 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
   }
 
   // Store tokens in KV (no TTL — we refresh them ourselves)
-  await env.SPOTIFY_DATA.put(
-    "spotify_tokens",
-    JSON.stringify({
-      ...tokenResponse.data,
-      obtained_at: Date.now(),
-    })
-  );
+  const callbackTokens = {
+    ...tokenResponse.data,
+    obtained_at: Date.now(),
+  };
+  await env.SPOTIFY_DATA.put("spotify_tokens", JSON.stringify(callbackTokens));
+  const cbExpiresAt = callbackTokens.obtained_at + ((callbackTokens.expires_in || 3600) - 300) * 1000;
+  _cachedTokens = { data: callbackTokens, expiresAt: cbExpiresAt };
 
   // Clean up state
   await env.SPOTIFY_DATA.delete(`oauth_state_${state}`);
@@ -1022,15 +1023,25 @@ async function exchangeCodeForTokens(
 }
 
 async function getStoredTokens(env: Env) {
+  // Return from in-memory cache if the access token is still valid.
+  // This avoids a KV read on every request (saves reads for high-frequency polling).
+  if (_cachedTokens && Date.now() < _cachedTokens.expiresAt) {
+    return _cachedTokens.data;
+  }
+
   const tokensJson = await env.SPOTIFY_DATA.get("spotify_tokens");
-  if (!tokensJson) return null;
+  if (!tokensJson) {
+    _cachedTokens = null;
+    return null;
+  }
 
   const tokens = JSON.parse(tokensJson);
 
   // Check if access token is expired (with 5 min buffer)
   const expiresIn = tokens.expires_in || 3600;
   const obtainedAt = tokens.obtained_at || 0;
-  const isExpired = Date.now() > obtainedAt + (expiresIn - 300) * 1000;
+  const tokenExpiresAt = obtainedAt + (expiresIn - 300) * 1000;
+  const isExpired = Date.now() > tokenExpiresAt;
 
   if (isExpired && tokens.refresh_token && env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET) {
     // Refresh the access token
@@ -1042,10 +1053,14 @@ async function getStoredTokens(env: Env) {
         obtained_at: Date.now(),
       };
       await env.SPOTIFY_DATA.put("spotify_tokens", JSON.stringify(newTokens));
+      const newExpiresAt = newTokens.obtained_at + ((newTokens.expires_in || 3600) - 300) * 1000;
+      _cachedTokens = { data: newTokens, expiresAt: newExpiresAt };
       return newTokens;
     }
   }
 
+  // Cache the valid tokens
+  _cachedTokens = { data: tokens, expiresAt: tokenExpiresAt };
   return tokens;
 }
 
