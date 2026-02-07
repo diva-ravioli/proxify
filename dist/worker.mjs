@@ -1,5 +1,6 @@
 // src/index.ts
 var WORKER_SOURCE_URL = "https://raw.githubusercontent.com/diva-ravioli/proxify/main/dist/worker.mjs";
+var _cachedTokens = null;
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -13,8 +14,6 @@ var src_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const pathname = url.pathname;
-    const workerName = url.hostname.split(".")[0];
-    ctx.waitUntil(env.SPOTIFY_DATA.put("_worker_name", workerName));
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
     }
@@ -87,7 +86,7 @@ var src_default = {
   }
 };
 async function checkForUpdates(env) {
-  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID)
+  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID || !env.WORKER_NAME)
     return;
   try {
     const resp = await fetch(WORKER_SOURCE_URL);
@@ -102,11 +101,11 @@ async function checkForUpdates(env) {
     const storedHash = await env.SPOTIFY_DATA.get("_worker_hash");
     if (storedHash === latestHash)
       return;
-    let workerName = await env.SPOTIFY_DATA.get("_worker_name");
-    if (!workerName) {
+    if (!storedHash) {
       await env.SPOTIFY_DATA.put("_worker_hash", latestHash);
       return;
     }
+    const workerName = env.WORKER_NAME;
     const kvList = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/storage/kv/namespaces?per_page=100`,
       { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } }
@@ -120,6 +119,7 @@ async function checkForUpdates(env) {
     const bindings = [
       { type: "kv_namespace", name: "SPOTIFY_DATA", namespace_id: kvNamespace.id },
       { type: "plain_text", name: "ENVIRONMENT", text: env.ENVIRONMENT || "production" },
+      { type: "plain_text", name: "WORKER_NAME", text: env.WORKER_NAME },
       { type: "plain_text", name: "CF_ACCOUNT_ID", text: env.CF_ACCOUNT_ID },
       { type: "secret_text", name: "CF_API_TOKEN", text: env.CF_API_TOKEN }
     ];
@@ -499,7 +499,7 @@ async function handleCredentialsSubmit(request, env) {
   if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
     return new Response("Auto-configuration not available (missing CF_API_TOKEN).", { status: 500 });
   }
-  const workerName = await env.SPOTIFY_DATA.get("_worker_name") || new URL(request.url).hostname.split(".")[0];
+  const workerName = env.WORKER_NAME || new URL(request.url).hostname.split(".")[0];
   const cfApi = "https://api.cloudflare.com/client/v4";
   const secretsUrl = `${cfApi}/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${workerName}/secrets`;
   const secrets = [
@@ -526,6 +526,7 @@ async function handleCredentialsSubmit(request, env) {
   if (errors.length > 0) {
     return new Response("Failed to save credentials: " + errors.join("; "), { status: 500 });
   }
+  _cachedTokens = null;
   await env.SPOTIFY_DATA.delete("spotify_tokens");
   const setupUrl = new URL("/setup", request.url).toString();
   const html = `<!DOCTYPE html>
@@ -586,13 +587,13 @@ async function handleCallback(request, env) {
       status: 400
     });
   }
-  await env.SPOTIFY_DATA.put(
-    "spotify_tokens",
-    JSON.stringify({
-      ...tokenResponse.data,
-      obtained_at: Date.now()
-    })
-  );
+  const callbackTokens = {
+    ...tokenResponse.data,
+    obtained_at: Date.now()
+  };
+  await env.SPOTIFY_DATA.put("spotify_tokens", JSON.stringify(callbackTokens));
+  const cbExpiresAt = callbackTokens.obtained_at + ((callbackTokens.expires_in || 3600) - 300) * 1e3;
+  _cachedTokens = { data: callbackTokens, expiresAt: cbExpiresAt };
   await env.SPOTIFY_DATA.delete(`oauth_state_${state}`);
   return new Response(
     `
@@ -808,13 +809,19 @@ async function exchangeCodeForTokens(code, callbackUrl, env) {
   return { success: true, data };
 }
 async function getStoredTokens(env) {
+  if (_cachedTokens && Date.now() < _cachedTokens.expiresAt) {
+    return _cachedTokens.data;
+  }
   const tokensJson = await env.SPOTIFY_DATA.get("spotify_tokens");
-  if (!tokensJson)
+  if (!tokensJson) {
+    _cachedTokens = null;
     return null;
+  }
   const tokens = JSON.parse(tokensJson);
   const expiresIn = tokens.expires_in || 3600;
   const obtainedAt = tokens.obtained_at || 0;
-  const isExpired = Date.now() > obtainedAt + (expiresIn - 300) * 1e3;
+  const tokenExpiresAt = obtainedAt + (expiresIn - 300) * 1e3;
+  const isExpired = Date.now() > tokenExpiresAt;
   if (isExpired && tokens.refresh_token && env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET) {
     const refreshed = await refreshAccessToken(tokens.refresh_token, env);
     if (refreshed) {
@@ -824,9 +831,12 @@ async function getStoredTokens(env) {
         obtained_at: Date.now()
       };
       await env.SPOTIFY_DATA.put("spotify_tokens", JSON.stringify(newTokens));
+      const newExpiresAt = newTokens.obtained_at + ((newTokens.expires_in || 3600) - 300) * 1e3;
+      _cachedTokens = { data: newTokens, expiresAt: newExpiresAt };
       return newTokens;
     }
   }
+  _cachedTokens = { data: tokens, expiresAt: tokenExpiresAt };
   return tokens;
 }
 async function refreshAccessToken(refreshToken, env) {
