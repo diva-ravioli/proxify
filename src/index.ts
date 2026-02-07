@@ -238,6 +238,9 @@ function handleLoginPage(): Response {
   button { width: 100%; padding: 12px; background: #1db954; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
   button:hover { background: #1ed760; }
   .error { color: #c62828; text-align: center; margin-bottom: 12px; font-size: 14px; display: none; }
+  .hint { text-align: center; margin-top: 16px; font-size: 13px; color: #888; }
+  .hint a { color: #1db954; text-decoration: none; }
+  .hint a:hover { text-decoration: underline; }
 </style></head>
 <body>
   <div class="card">
@@ -247,6 +250,7 @@ function handleLoginPage(): Response {
       <input type="password" name="key" placeholder="API Key" autofocus required />
       <button type="submit">Login</button>
     </form>
+    <p class="hint">Your API key is stored in your <a href="https://dash.cloudflare.com/" target="_blank">Cloudflare Dashboard</a> under Worker Settings &gt; Variables</p>
   </div>
 </body></html>`;
   return new Response(html, {
@@ -274,6 +278,9 @@ async function handleDashboardLogin(request: Request, env: Env): Promise<Respons
   button { width: 100%; padding: 12px; background: #1db954; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
   button:hover { background: #1ed760; }
   .error { color: #c62828; text-align: center; margin-bottom: 12px; font-size: 14px; }
+  .hint { text-align: center; margin-top: 16px; font-size: 13px; color: #888; }
+  .hint a { color: #1db954; text-decoration: none; }
+  .hint a:hover { text-decoration: underline; }
 </style></head>
 <body>
   <div class="card">
@@ -283,6 +290,7 @@ async function handleDashboardLogin(request: Request, env: Env): Promise<Respons
       <input type="password" name="key" placeholder="API Key" autofocus required />
       <button type="submit">Login</button>
     </form>
+    <p class="hint">Your API key is stored in your <a href="https://dash.cloudflare.com/" target="_blank">Cloudflare Dashboard</a> under Worker Settings &gt; Variables</p>
   </div>
 </body></html>`;
     return new Response(html, {
