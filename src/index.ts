@@ -1,8 +1,5 @@
 /**
- * Spotify Proxy - Cloudflare Worker
- *
- * A personal Spotify API proxy that handles OAuth authentication
- * and provides simple endpoints for accessing Spotify data.
+ * Cloudflare Worker — API proxy with OAuth.
  */
 
 export interface Env {
@@ -14,12 +11,17 @@ export interface Env {
   CF_ACCOUNT_ID: string;
 }
 
-// CORS headers for all responses
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
+
+const notFound = () => new Response("Not Found", { status: 404 });
+
+function isSetupComplete(env: Env): boolean {
+  return !!(env.API_KEY && env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET);
+}
 
 export default {
   async fetch(
@@ -30,35 +32,40 @@ export default {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
-    // Handle preflight requests
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
     }
 
     try {
-      // Require API key authentication for all endpoints except health and setup endpoints
-      const publicEndpoints = [
-        "/",
-        "/health",
-        "/credentials",
-        "/setup",
-        "/callback",
-      ];
-      if (!publicEndpoints.includes(pathname)) {
-        const authResult = await requireApiKey(request, env);
-        if (authResult) return authResult; // Return 401 if auth failed
+      const setupComplete = isSetupComplete(env);
+
+      // /callback must always be public (OAuth redirect target)
+      if (pathname === "/callback") {
+        return handleCallback(request, env);
       }
 
-      // Route handling
+      // When setup is NOT complete, only expose setup-related pages
+      if (!setupComplete) {
+        switch (pathname) {
+          case "/":
+            return Response.redirect(
+              new URL("/credentials", request.url).toString(),
+              302
+            );
+          case "/credentials":
+            return handleCredentials(request, env);
+          case "/setup":
+            return handleSetup(request, env);
+          default:
+            return notFound();
+        }
+      }
+
+      // Setup IS complete — everything requires auth, nothing leaks
+      const authResult = await requireApiKey(request, env);
+      if (authResult) return authResult;
+
       switch (pathname) {
-        case "/":
-          return handleRoot(request, env);
-        case "/setup":
-          return handleSetup(request, env);
-        case "/credentials":
-          return handleCredentials(request, env);
-        case "/callback":
-          return handleCallback(request, env);
         case "/now-playing":
           return handleNowPlaying(request, env);
         case "/recent":
@@ -66,10 +73,7 @@ export default {
         case "/health":
           return handleHealth(request, env);
         default:
-          return new Response("Not Found", {
-            status: 404,
-            headers: corsHeaders,
-          });
+          return notFound();
       }
     } catch (error) {
       console.error("Error handling request:", error);
@@ -80,190 +84,6 @@ export default {
     }
   },
 };
-
-/**
- * Handle root endpoint - redirect to setup
- */
-async function handleRoot(request: Request, env: Env): Promise<Response> {
-  const hasApiKey = !!env.API_KEY;
-  const hasSpotifyCredentials = !!(
-    env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET
-  );
-  const storedTokens = await getStoredTokens(env);
-
-  // If no API key or Spotify credentials, redirect to credentials setup
-  if (!hasApiKey || !hasSpotifyCredentials) {
-    return Response.redirect(
-      new URL("/credentials", request.url).toString(),
-      302
-    );
-  }
-
-  let setupStatus = "not_started";
-  let nextAction = "/credentials";
-  let nextActionText = "Setup Credentials";
-
-  if (hasSpotifyCredentials) {
-    if (storedTokens) {
-      setupStatus = "complete";
-      nextAction = "/now-playing";
-      nextActionText = "View Now Playing";
-    } else {
-      setupStatus = "credentials_only";
-      nextAction = "/setup";
-      nextActionText = "Connect Spotify Account";
-    }
-  }
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <title>Spotify Proxy</title>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          max-width: 600px;
-          margin: 50px auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background: white;
-          padding: 30px;
-          border-radius: 10px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-          text-align: center;
-        }
-        .button {
-          display: inline-block;
-          padding: 12px 24px;
-          background: #1db954;
-          color: white;
-          text-decoration: none;
-          border-radius: 25px;
-          margin: 10px;
-          font-size: 16px;
-        }
-        .button:hover { background: #1ed760; }
-        .button.secondary {
-          background: #666;
-          font-size: 14px;
-          padding: 8px 16px;
-        }
-        .button.secondary:hover { background: #888; }
-        .status {
-          padding: 15px;
-          border-radius: 5px;
-          margin: 20px 0;
-        }
-        .status.complete { background: #e8f5e8; color: #2e7d32; }
-        .status.partial { background: #fff3e0; color: #f57c00; }
-        .status.pending { background: #e3f2fd; color: #1976d2; }
-        .endpoints {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 10px;
-          margin: 20px 0;
-        }
-        .endpoint {
-          padding: 10px;
-          background: #f9f9f9;
-          border-radius: 5px;
-          text-align: left;
-        }
-        .endpoint a {
-          color: #1db954;
-          text-decoration: none;
-          font-weight: bold;
-        }
-        .endpoint a:hover {
-          text-decoration: underline;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>Spotify Proxy</h1>
-        <p>Your personal Spotify API proxy</p>
-
-        <div class="info" style="background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 20px 0;">
-          <h3>Secure Authentication</h3>
-          <p>This proxy is secured with API key authentication via Cloudflare secrets. Include your API key in requests:</p>
-          <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace;">Authorization: Bearer YOUR_API_KEY</code>
-        </div>
-
-        ${
-          setupStatus === "complete"
-            ? `
-          <div class="status complete">
-            <strong>Setup Complete!</strong><br>
-            Your Spotify account is connected and ready to use.
-          </div>
-        `
-            : setupStatus === "credentials_only"
-            ? `
-          <div class="status partial">
-            <strong>Credentials Set, OAuth Pending</strong><br>
-            Connect your Spotify account to start using the proxy.
-          </div>
-        `
-            : `
-          <div class="status pending">
-            <strong>Setup Required</strong><br>
-            Enter your Spotify app credentials to get started.
-          </div>
-        `
-        }
-
-        <div>
-          <a href="${nextAction}" class="button">${nextActionText}</a>
-          <a href="/health" class="button secondary">Health Check</a>
-        </div>
-
-        ${
-          setupStatus === "complete"
-            ? `
-          <div class="endpoints">
-            <div class="endpoint">
-              <a href="/now-playing">/now-playing</a>
-              <div>Current track & playback</div>
-            </div>
-            <div class="endpoint">
-              <a href="/recent">/recent</a>
-              <div>Recently played tracks</div>
-            </div>
-            <div class="endpoint">
-              <a href="/health">/health</a>
-              <div>API status & health</div>
-            </div>
-          </div>
-        `
-            : ""
-        }
-
-        ${
-          setupStatus !== "not_started"
-            ? `
-          <div style="margin-top: 20px;">
-            <a href="/credentials" class="button secondary">Update Credentials</a>
-          </div>
-        `
-            : ""
-        }
-      </div>
-    </body>
-    </html>
-  `;
-
-  return new Response(html, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      ...corsHeaders,
-    },
-  });
-}
 
 /**
  * Handle setup endpoint - OAuth configuration
@@ -376,17 +196,10 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
   return new Response(
     `
     <html>
-      <head><meta charset="UTF-8"><title>OAuth Success</title></head>
+      <head><meta charset="UTF-8"><title>Setup Complete</title></head>
       <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-        <h1>OAuth Setup Complete!</h1>
-        <p>Your Spotify account has been successfully connected.</p>
-        <p>You can now use the API endpoints:</p>
-        <ul style="display: inline-block; text-align: left;">
-          <li><a href="/now-playing">/now-playing</a></li>
-          <li><a href="/recent">/recent</a></li>
-          <li><a href="/health">/health</a></li>
-        </ul>
-        <p><a href="/">&larr; Back to Home</a></p>
+        <h1>Setup Complete</h1>
+        <p>Your account has been connected. The proxy is ready to use.</p>
       </body>
     </html>
   `,
@@ -407,7 +220,7 @@ async function handleNowPlaying(request: Request, env: Env): Promise<Response> {
   if (!tokens) {
     return new Response(
       JSON.stringify({
-        error: "No valid tokens found. Please complete OAuth setup first.",
+        error: "Not configured.",
       }),
       {
         status: 401,
@@ -466,7 +279,7 @@ async function handleRecent(request: Request, env: Env): Promise<Response> {
   if (!tokens) {
     return new Response(
       JSON.stringify({
-        error: "No valid tokens found. Please complete OAuth setup first.",
+        error: "Not configured.",
       }),
       {
         status: 401,
@@ -517,29 +330,11 @@ async function handleHealth(request: Request, env: Env): Promise<Response> {
   const hasApiKey = !!env.API_KEY;
 
   const health = {
-    status: "healthy",
+    status: "ok",
     timestamp: new Date().toISOString(),
-    environment: env.ENVIRONMENT || "unknown",
-    api_key_configured: hasApiKey,
     credentials_configured: hasValidCredentials,
     oauth_configured: hasValidTokens,
-    setup_complete: hasApiKey && hasValidCredentials && hasValidTokens,
-    next_step: !hasApiKey
-      ? "Configure secrets (API key + Spotify credentials) at /credentials"
-      : !hasValidCredentials
-      ? "Configure Spotify credentials at /credentials"
-      : !hasValidTokens
-      ? "Complete OAuth setup at /setup"
-      : "Ready to use API endpoints",
-    endpoints: {
-      home: "/",
-      credentials: "/credentials",
-      setup: "/setup",
-      callback: "/callback",
-      now_playing: "/now-playing",
-      recent: "/recent",
-      health: "/health",
-    },
+    ready: hasApiKey && hasValidCredentials && hasValidTokens,
   };
 
   return new Response(JSON.stringify(health, null, 2), {
@@ -584,7 +379,7 @@ async function exchangeCodeForTokens(
   if (!env.SPOTIFY_CLIENT_ID || !env.SPOTIFY_CLIENT_SECRET) {
     return {
       success: false,
-      error: "No Spotify credentials configured. Please complete setup first.",
+      error: "Credentials not configured.",
     };
   }
 
@@ -634,7 +429,7 @@ async function getSetupHTML(): Promise<string> {
     <html>
     <head>
       <meta charset="UTF-8">
-      <title>Spotify Proxy Setup</title>
+      <title>Setup</title>
       <style>
         body {
           font-family: Arial, sans-serif;
@@ -684,34 +479,23 @@ async function getSetupHTML(): Promise<string> {
     </head>
     <body>
       <div class="container">
-        <h1>Spotify Proxy Setup</h1>
+        <h1>Connect Account</h1>
 
         <div class="info">
           <h3>Credentials Configured</h3>
-          <p>Your Spotify app credentials are ready. Now connect your account!</p>
+          <p>Your app credentials are set. Connect your account to finish setup.</p>
         </div>
 
         <div class="step">
-          <h3>Step 1: Authorize with Spotify</h3>
-          <p>Click the button below to connect your Spotify account:</p>
+          <h3>Authorize</h3>
+          <p>Click below to connect your account via OAuth:</p>
           <form method="POST">
-            <button type="submit" class="button">Connect Spotify Account</button>
+            <button type="submit" class="button">Connect Account</button>
           </form>
         </div>
 
-        <div class="step">
-          <h3>Step 2: Test Your Setup</h3>
-          <p>After authorization, test these endpoints:</p>
-          <ul>
-            <li><a href="/now-playing">/now-playing</a> - Current track</li>
-            <li><a href="/recent">/recent</a> - Recent tracks</li>
-            <li><a href="/health">/health</a> - Health check</li>
-          </ul>
-        </div>
-
         <p>
-          <a href="/">&larr; Back to Home</a> |
-          <a href="/credentials" class="button secondary">Update Credentials</a>
+          <a href="/credentials" class="button secondary">Back to Credentials</a>
         </p>
       </div>
     </body>
@@ -743,7 +527,7 @@ async function getCredentialsHTML(
     <html>
     <head>
       <meta charset="UTF-8">
-      <title>Spotify Proxy - Setup</title>
+      <title>Proxy Setup</title>
       <style>
         body {
           font-family: Arial, sans-serif;
@@ -865,11 +649,11 @@ async function getCredentialsHTML(
     </head>
     <body>
       <div class="container">
-        <h1>Spotify Proxy Setup</h1>
+        <h1>Proxy Setup</h1>
 
         <div class="warning">
-          <h3>Secure Setup Required</h3>
-          <p>Your Spotify proxy needs both an API key and Spotify credentials configured as Cloudflare secrets for maximum security.</p>
+          <h3>Setup Required</h3>
+          <p>This proxy needs an API key and app credentials configured as Cloudflare Worker secrets.</p>
         </div>
 
         ${errorMessage ? `<div class="error">${errorMessage}</div>` : ""}
@@ -906,35 +690,31 @@ async function getCredentialsHTML(
           </div>
         </div>
 
-        <!-- Spotify Credentials Section -->
+        <!-- App Credentials Section -->
         <div class="section">
-          <h2>Step 2: Spotify App Setup</h2>
+          <h2>Step 2: App Credentials</h2>
 
           <div class="info">
-            <h3>Get Spotify Credentials:</h3>
-            <ol>
-              <li>Go to <a href="https://developer.spotify.com/dashboard" target="_blank">Spotify Developer Dashboard</a></li>
-              <li>Create a new app (or use existing)</li>
-              <li>Copy your <strong>Client ID</strong> and <strong>Client Secret</strong></li>
-              <li>Add this callback URL: <code>${origin}/callback</code></li>
-            </ol>
+            <h3>Get your app credentials</h3>
+            <p>You'll need a <strong>Client ID</strong> and <strong>Client Secret</strong> from your app provider.</p>
+            <p>Set your callback URL to: <code>${origin}/callback</code></p>
           </div>
 
           <div class="step">
-            <h3>Set Spotify Secrets in Cloudflare</h3>
-            <p>Follow the same process as above to set these two additional secrets:</p>
+            <h3>Set App Secrets in Cloudflare</h3>
+            <p>Follow the same process as Step 1 to add these two secrets:</p>
 
             <div style="margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;">
               <strong>Secret 1:</strong><br>
               Variable name: <code>SPOTIFY_CLIENT_ID</code><br>
-              Value: Your Spotify Client ID<br>
+              Value: Your Client ID<br>
               Check "Encrypt"
             </div>
 
             <div style="margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;">
               <strong>Secret 2:</strong><br>
               Variable name: <code>SPOTIFY_CLIENT_SECRET</code><br>
-              Value: Your Spotify Client Secret<br>
+              Value: Your Client Secret<br>
               Check "Encrypt"
             </div>
           </div>
@@ -944,31 +724,17 @@ async function getCredentialsHTML(
 
         <!-- Next Steps -->
         <div class="step">
-          <h3>Step 3: Complete Setup</h3>
-          <p>After setting all secrets in Cloudflare Dashboard:</p>
+          <h3>Step 3: Connect Account</h3>
+          <p>After setting all secrets in the Cloudflare Dashboard:</p>
           <ol>
-            <li>Refresh this page to verify secrets are configured</li>
-            <li>Proceed to OAuth setup to connect your Spotify account</li>
-            <li>Start using your secured Spotify proxy!</li>
+            <li>Click below to proceed to OAuth setup</li>
+            <li>Authorize the app to connect your account</li>
           </ol>
 
           <div style="margin: 20px 0;">
-            <a href="/health" class="button" target="_blank">Check Configuration Status</a>
             <a href="/setup" class="button">Continue to OAuth Setup</a>
           </div>
         </div>
-
-        <div class="info">
-          <h3>Why Use Cloudflare Secrets?</h3>
-          <ul>
-            <li><strong>Maximum Security</strong> - Encrypted and never exposed in code or logs</li>
-            <li><strong>Environment Isolation</strong> - Different secrets for development/production</li>
-            <li><strong>Industry Standard</strong> - Best practice for sensitive credentials</li>
-            <li><strong>No CLI Required</strong> - Set everything via the web dashboard</li>
-          </ul>
-        </div>
-
-        <p><a href="/">&larr; Back to Home</a></p>
       </div>
 
       <script>
@@ -1014,7 +780,7 @@ async function requireApiKey(
     return new Response(
       JSON.stringify({
         error:
-          "Missing Authorization header. Include 'Authorization: Bearer YOUR_API_KEY' in your request.",
+          "Unauthorized.",
       }),
       {
         status: 401,
@@ -1030,7 +796,7 @@ async function requireApiKey(
     return new Response(
       JSON.stringify({
         error:
-          "Invalid Authorization header format. Use 'Authorization: Bearer YOUR_API_KEY'.",
+          "Unauthorized.",
       }),
       {
         status: 401,
@@ -1048,7 +814,7 @@ async function requireApiKey(
     return new Response(
       JSON.stringify({
         error:
-          "API key not configured. Please set up via Cloudflare dashboard.",
+          "Unauthorized.",
       }),
       {
         status: 500,
@@ -1063,7 +829,7 @@ async function requireApiKey(
   if (providedApiKey !== env.API_KEY) {
     return new Response(
       JSON.stringify({
-        error: "Invalid API key.",
+        error: "Unauthorized.",
       }),
       {
         status: 401,
