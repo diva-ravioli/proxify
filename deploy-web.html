@@ -410,9 +410,7 @@
           const listData = await listResp.json();
           if (listData.success && listData.result) {
             const existing = listData.result.find(
-              (ns) =>
-                ns.title === `${workerName}-SPOTIFY_DATA` ||
-                ns.title.includes("SPOTIFY_DATA"),
+              (ns) => ns.title === `${workerName}-SPOTIFY_DATA`,
             );
             if (existing) {
               kvId = existing.id;
