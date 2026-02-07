@@ -186,7 +186,7 @@ function handleLoginPage() {
       <input type="password" name="key" placeholder="API Key" autofocus required />
       <button type="submit">Login</button>
     </form>
-    <p class="hint">Your API key is stored in your <a href="https://dash.cloudflare.com/" target="_blank">Cloudflare Dashboard</a> under Worker Settings &gt; Variables</p>
+    <p class="hint">Use the API key you chose during setup</p>
   </div>
 </body></html>`;
   return new Response(html, {
@@ -210,8 +210,6 @@ async function handleDashboardLogin(request, env) {
   button:hover { background: #1ed760; }
   .error { color: #c62828; text-align: center; margin-bottom: 12px; font-size: 14px; }
   .hint { text-align: center; margin-top: 16px; font-size: 13px; color: #888; }
-  .hint a { color: #1db954; text-decoration: none; }
-  .hint a:hover { text-decoration: underline; }
 </style></head>
 <body>
   <div class="card">
@@ -221,7 +219,7 @@ async function handleDashboardLogin(request, env) {
       <input type="password" name="key" placeholder="API Key" autofocus required />
       <button type="submit">Login</button>
     </form>
-    <p class="hint">Your API key is stored in your <a href="https://dash.cloudflare.com/" target="_blank">Cloudflare Dashboard</a> under Worker Settings &gt; Variables</p>
+    <p class="hint">Use the API key you chose during setup</p>
   </div>
 </body></html>`;
     return new Response(html, {
@@ -416,13 +414,117 @@ async function handleSetup(request, env) {
   });
 }
 async function handleCredentials(request, env) {
-  const html = await getCredentialsHTML(void 0, request.url, env);
+  if (request.method === "POST") {
+    return handleCredentialsSubmit(request, env);
+  }
+  const apiKey = generateSecureApiKey();
+  const origin = new URL(request.url).origin;
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Setup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+  .container { max-width: 520px; margin: 40px auto; }
+  .card { background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); padding: 32px; }
+  h1 { font-size: 1.4em; color: #333; margin-bottom: 8px; }
+  .subtitle { color: #888; font-size: 0.9em; margin-bottom: 24px; }
+  label { display: block; font-weight: 600; font-size: 14px; color: #444; margin-bottom: 6px; }
+  input { width: 100%; padding: 10px 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; margin-bottom: 4px; }
+  input:focus { outline: none; border-color: #1db954; }
+  .field { margin-bottom: 18px; }
+  .hint { font-size: 12px; color: #888; margin-top: 4px; }
+  .hint a { color: #1db954; }
+  button { width: 100%; padding: 12px; background: #1db954; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+  button:hover { background: #1ed760; }
+  .divider { border: none; border-top: 1px solid #eee; margin: 24px 0; }
+  .section-label { font-size: 13px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
+  .error { background: #fde8e8; color: #c62828; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+</style></head>
+<body>
+<div class="container">
+  <div class="card">
+    <h1>Proxy Setup</h1>
+    <p class="subtitle">Configure your API key and app credentials</p>
+
+    <div id="error-box"></div>
+
+    <form method="POST" id="setup-form">
+      <div class="section-label">Authentication</div>
+
+      <div class="field">
+        <label for="api_key">API Key</label>
+        <input type="text" name="api_key" id="api_key" value="${apiKey}" required />
+        <p class="hint">Auto-generated. Change it or keep it \u2014 you'll need it to log in.</p>
+      </div>
+
+      <hr class="divider" />
+      <div class="section-label">App Credentials</div>
+
+      <div class="field">
+        <label for="client_id">Client ID</label>
+        <input type="text" name="client_id" id="client_id" placeholder="Your Spotify Client ID" required />
+        <p class="hint">From <a href="https://developer.spotify.com/dashboard" target="_blank">developer.spotify.com/dashboard</a></p>
+      </div>
+
+      <div class="field">
+        <label for="client_secret">Client Secret</label>
+        <input type="password" name="client_secret" id="client_secret" placeholder="Your Spotify Client Secret" required />
+      </div>
+
+      <div class="field">
+        <label>Callback URL</label>
+        <input type="text" value="${origin}/callback" readonly style="background: #f9f9f9; color: #666;" />
+        <p class="hint">Add this URL to your Spotify app's redirect URIs</p>
+      </div>
+
+      <button type="submit">Save &amp; Continue</button>
+    </form>
+  </div>
+</div>
+</body></html>`;
   return new Response(html, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      ...corsHeaders
-    }
+    headers: { "Content-Type": "text/html; charset=utf-8" }
   });
+}
+async function handleCredentialsSubmit(request, env) {
+  const formData = await request.formData();
+  const apiKey = (formData.get("api_key") || "").trim();
+  const clientId = (formData.get("client_id") || "").trim();
+  const clientSecret = (formData.get("client_secret") || "").trim();
+  if (!apiKey || !clientId || !clientSecret) {
+    return new Response("All fields are required.", { status: 400 });
+  }
+  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
+    return new Response("Auto-configuration not available (missing CF_API_TOKEN).", { status: 500 });
+  }
+  const workerName = await env.SPOTIFY_DATA.get("_worker_name") || new URL(request.url).hostname.split(".")[0];
+  const cfApi = "https://api.cloudflare.com/client/v4";
+  const secretsUrl = `${cfApi}/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${workerName}/secrets`;
+  const secrets = [
+    { name: "API_KEY", text: apiKey, type: "secret_text" },
+    { name: "SPOTIFY_CLIENT_ID", text: clientId, type: "secret_text" },
+    { name: "SPOTIFY_CLIENT_SECRET", text: clientSecret, type: "secret_text" }
+  ];
+  const errors = [];
+  for (const secret of secrets) {
+    const resp = await fetch(secretsUrl, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${env.CF_API_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(secret)
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      const msg = data.errors?.map((e) => e.message).join(", ") || resp.statusText;
+      errors.push(`${secret.name}: ${msg}`);
+    }
+  }
+  if (errors.length > 0) {
+    return new Response("Failed to save credentials: " + errors.join("; "), { status: 500 });
+  }
+  return Response.redirect(new URL("/setup", request.url).toString(), 302);
 }
 async function handleCallback(request, env) {
   const url = new URL(request.url);
@@ -755,255 +857,6 @@ async function getSetupHTML() {
           <a href="/credentials" class="button secondary">Back to Credentials</a>
         </p>
       </div>
-    </body>
-    </html>
-  `;
-}
-async function getCredentialsHTML(errorMessage, requestUrl, env) {
-  const origin = requestUrl ? new URL(requestUrl).origin : "https://your-worker.workers.dev";
-  const apiKey = generateSecureApiKey();
-  const workerName = requestUrl ? new URL(requestUrl).hostname.split(".")[0] : "";
-  const cfAccountId = env?.CF_ACCOUNT_ID || "";
-  const dashboardUrl = cfAccountId && workerName ? `https://dash.cloudflare.com/${cfAccountId}/workers/services/view/${workerName}/production/settings#variables` : "https://dash.cloudflare.com/";
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <title>Proxy Setup</title>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          max-width: 800px;
-          margin: 50px auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background: white;
-          padding: 30px;
-          border-radius: 10px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .button {
-          display: inline-block;
-          padding: 12px 24px;
-          background: #1db954;
-          color: white;
-          text-decoration: none;
-          border-radius: 25px;
-          margin: 10px 5px;
-          border: none;
-          cursor: pointer;
-          font-size: 16px;
-        }
-        .button:hover { background: #1ed760; }
-        .button.secondary {
-          background: #666;
-          font-size: 14px;
-          padding: 8px 16px;
-        }
-        .button.secondary:hover { background: #888; }
-        .button.dashboard {
-          background: #f38020;
-          font-size: 18px;
-          padding: 15px 30px;
-        }
-        .button.dashboard:hover { background: #e66f00; }
-        .form-group {
-          margin: 20px 0;
-        }
-        .form-group label {
-          display: block;
-          margin-bottom: 5px;
-          font-weight: bold;
-        }
-        .form-group input {
-          width: 100%;
-          padding: 10px;
-          border: 2px solid #ddd;
-          border-radius: 5px;
-          font-size: 14px;
-          box-sizing: border-box;
-        }
-        .form-group input:focus {
-          border-color: #1db954;
-          outline: none;
-        }
-        .error {
-          background: #ffebee;
-          color: #c62828;
-          padding: 15px;
-          border-radius: 5px;
-          margin: 20px 0;
-        }
-        .info {
-          background: #e3f2fd;
-          padding: 15px;
-          border-radius: 5px;
-          margin: 20px 0;
-        }
-        .warning {
-          background: #fff3e0;
-          color: #f57c00;
-          padding: 15px;
-          border-radius: 5px;
-          margin: 20px 0;
-        }
-        .step {
-          margin: 15px 0;
-          padding: 15px;
-          background: #f9f9f9;
-          border-left: 4px solid #1db954;
-          border-radius: 5px;
-        }
-        .step h3 {
-          margin-top: 0;
-          color: #1db954;
-        }
-        .api-key {
-          background: #fffde7;
-          border: 2px solid #ffc107;
-          padding: 15px;
-          border-radius: 5px;
-          margin: 10px 0;
-          font-family: monospace;
-          word-break: break-all;
-          font-size: 16px;
-          font-weight: bold;
-        }
-        .section {
-          margin: 30px 0;
-          padding: 20px;
-          border: 2px solid #e0e0e0;
-          border-radius: 10px;
-        }
-        .section h2 {
-          margin-top: 0;
-          color: #333;
-        }
-        code {
-          background: #f5f5f5;
-          padding: 2px 6px;
-          border-radius: 3px;
-          font-family: monospace;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>Proxy Setup</h1>
-
-        <div class="warning">
-          <h3>Setup Required</h3>
-          <p>This proxy needs an API key and app credentials configured as Cloudflare Worker secrets.</p>
-        </div>
-
-        ${errorMessage ? `<div class="error">${errorMessage}</div>` : ""}
-
-        <!-- API Key Section -->
-        <div class="section">
-          <h2>Step 1: API Key Setup</h2>
-
-          <div class="step">
-            <h3>Generate Your API Key</h3>
-            <p>We've generated a secure API key for you:</p>
-            <div class="api-key" id="apiKey">${apiKey}</div>
-            <button class="button secondary" onclick="copyApiKey()">Copy API Key</button>
-            <button class="button secondary" onclick="generateNewKey()">Generate New Key</button>
-          </div>
-
-          <div class="step">
-            <h3>Set API_KEY Secret in Cloudflare</h3>
-            <p><strong>Open your Cloudflare Workers dashboard:</strong></p>
-
-            <a href="${dashboardUrl}" target="_blank" class="button dashboard">Open Worker Settings</a>
-
-            <div style="margin: 20px 0;">
-              <p><strong>Instructions:</strong></p>
-              <ol>
-                <li>On the Settings page, find <strong>"Variables and Secrets"</strong></li>
-                <li>Click <strong>"Add"</strong></li>
-                <li>Set <strong>Variable name:</strong> <code>API_KEY</code></li>
-                <li>Set <strong>Value:</strong> paste the API key from above</li>
-                <li>Leave <strong>"Encrypt"</strong> unchecked so you can retrieve it later</li>
-                <li>Click <strong>"Save and deploy"</strong></li>
-              </ol>
-            </div>
-          </div>
-        </div>
-
-        <!-- App Credentials Section -->
-        <div class="section">
-          <h2>Step 2: App Credentials</h2>
-
-          <div class="info">
-            <h3>Get your app credentials</h3>
-            <p>You'll need a <strong>Client ID</strong> and <strong>Client Secret</strong> from your app provider.</p>
-            <p>Set your callback URL to: <code>${origin}/callback</code></p>
-          </div>
-
-          <div class="step">
-            <h3>Set App Secrets in Cloudflare</h3>
-            <p>Follow the same process as Step 1 to add these two secrets:</p>
-
-            <div style="margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;">
-              <strong>Secret 1:</strong><br>
-              Variable name: <code>SPOTIFY_CLIENT_ID</code><br>
-              Value: Your Client ID<br>
-              Check "Encrypt"
-            </div>
-
-            <div style="margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;">
-              <strong>Secret 2:</strong><br>
-              Variable name: <code>SPOTIFY_CLIENT_SECRET</code><br>
-              Value: Your Client Secret<br>
-              Check "Encrypt"
-            </div>
-          </div>
-        </div>
-
-
-
-        <!-- Next Steps -->
-        <div class="step">
-          <h3>Step 3: Connect Account</h3>
-          <p>After setting all secrets in the Cloudflare Dashboard:</p>
-          <ol>
-            <li>Click below to proceed to OAuth setup</li>
-            <li>Authorize the app to connect your account</li>
-          </ol>
-
-          <div style="margin: 20px 0;">
-            <a href="/setup" class="button">Continue to OAuth Setup</a>
-          </div>
-        </div>
-      </div>
-
-      <script>
-        let currentApiKey = '${apiKey}';
-
-        function copyApiKey() {
-          navigator.clipboard.writeText(currentApiKey).then(() => {
-            const btn = event.target;
-            const originalText = btn.textContent;
-            btn.textContent = 'Copied!';
-            setTimeout(() => btn.textContent = originalText, 2000);
-          });
-        }
-
-        function generateNewKey() {
-          // Generate a new secure API key
-          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-          let newKey = '';
-          for (let i = 0; i < 64; i++) {
-            newKey += chars.charAt(Math.floor(Math.random() * chars.length));
-          }
-
-          currentApiKey = newKey;
-          document.getElementById('apiKey').textContent = newKey;
-        }
-      <\/script>
     </body>
     </html>
   `;
