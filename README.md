@@ -1,6 +1,6 @@
 # proxify – Spotify API Proxy
 
-A personal Spotify API proxy that you can deploy to your own Cloudflare Workers account. Exposes simple endpoints like `/now-playing` and `/recent` without worrying about CORS or managing a server.
+A personal Spotify API proxy that you can deploy to your own Cloudflare Workers account. Exposes simple endpoints like `/now-playing`, `/recent`, and `/queue` without worrying about CORS or managing a server.
 
 ## Deploy
 
@@ -11,30 +11,27 @@ You'll need a free [Cloudflare account](https://dash.cloudflare.com/sign-up) wit
 1. **API Token** — [Create one here](https://dash.cloudflare.com/profile/api-tokens) with **Workers Scripts: Edit** and **Workers KV Storage: Edit** permissions
 2. **Account ID** — visible in your Cloudflare Dashboard URL: `dash.cloudflare.com/<account-id>/...`
 
-After deployment, visit your worker URL and the built-in setup UI will walk you through configuring your Spotify credentials and completing the OAuth flow.
-
 ## Setup
 
-After deployment, visit your worker URL. You'll be guided through:
+After deployment, visit your worker URL. The built-in setup UI walks you through everything — no Cloudflare dashboard configuration needed.
 
-1. **API Key** — A key is generated for you. Set it as an encrypted `API_KEY` variable in the Cloudflare dashboard.
-2. **Spotify Credentials** — Create a [Spotify Developer App](https://developer.spotify.com/dashboard), then set `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` as encrypted variables.
-3. **OAuth** — Connect your Spotify account with one click.
+1. **Credentials** — Enter your API key and Spotify app credentials directly in the form. They're saved as Worker secrets automatically.
+2. **OAuth** — Connect your Spotify account with one click.
 
-All configuration is done through the worker's web UI and the Cloudflare dashboard — no CLI required.
+You'll need a [Spotify Developer App](https://developer.spotify.com/dashboard) with the callback URL set to `https://your-worker.workers.dev/callback`.
 
 ## API Endpoints
 
-All endpoints except `/health`, `/credentials`, `/setup`, and `/callback` require an `Authorization: Bearer YOUR_API_KEY` header.
+All endpoints require an `Authorization: Bearer YOUR_API_KEY` header.
 
 | Endpoint | Description |
 |----------|-------------|
-| `/` | Home / status page |
 | `/now-playing` | Current track and playback state |
 | `/recent` | Recently played tracks (last 10) |
+| `/queue` | Player queue (currently playing + upcoming) |
 | `/health` | Health check and configuration status |
-| `/setup` | OAuth setup |
-| `/credentials` | Credential setup instructions |
+
+The root `/` serves a login form for the admin dashboard (enter your API key to view stats and trigger updates).
 
 ### Example: `/now-playing`
 
@@ -52,6 +49,10 @@ All endpoints except `/health`, `/credentials`, `/setup`, and `/callback` requir
   "progress_ms": 45000
 }
 ```
+
+## Auto-Updates
+
+Deployed workers check for updates every 6 hours and automatically redeploy when new code is available.
 
 ## Development
 
@@ -71,13 +72,13 @@ npm run build
 ## Security
 
 - API key authentication on all data endpoints
-- All credentials stored as encrypted Cloudflare Workers secrets
-- OAuth tokens stored temporarily in Cloudflare KV
+- Credentials stored as encrypted Cloudflare Workers secrets
+- OAuth tokens stored in Cloudflare KV with automatic refresh
 - All Spotify API calls are server-side
 
 ## Troubleshooting
 
 - **Deployment fails** — Check that your API token has both Workers Scripts and KV Storage edit permissions
 - **OAuth errors** — Make sure your Spotify app callback URL matches `https://your-worker.workers.dev/callback`
-- **"No valid tokens"** — Complete the credential and OAuth setup via the worker's web UI
+- **"Not configured"** — Complete the credential and OAuth setup via the worker's web UI
 - Check `/health` for current configuration status
