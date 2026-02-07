@@ -100,6 +100,8 @@ export default {
           return handleNowPlaying(request, env);
         case "/recent":
           return handleRecent(request, env);
+        case "/queue":
+          return handleQueue(request, env);
         case "/health":
           return handleHealth(request, env);
         case "/api/update":
@@ -864,6 +866,51 @@ async function handleRecent(request: Request, env: Env): Promise<Response> {
   if (!spotifyResponse.ok) {
     return new Response(
       JSON.stringify({ error: "Failed to fetch recent tracks" }),
+      {
+        status: spotifyResponse.status,
+        headers: {
+          "Content-Type": "application/json",
+          ...corsHeaders,
+        },
+      }
+    );
+  }
+
+  const data = await spotifyResponse.json();
+  return new Response(JSON.stringify(data), {
+    headers: {
+      "Content-Type": "application/json",
+      ...corsHeaders,
+    },
+  });
+}
+
+/**
+ * Handle queue endpoint
+ */
+async function handleQueue(request: Request, env: Env): Promise<Response> {
+  const tokens = await getStoredTokens(env);
+  if (!tokens) {
+    return new Response(
+      JSON.stringify({ error: "Not configured." }),
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          ...corsHeaders,
+        },
+      }
+    );
+  }
+
+  const spotifyResponse = await callSpotifyAPI(
+    "/v1/me/player/queue",
+    tokens.access_token
+  );
+
+  if (!spotifyResponse.ok) {
+    return new Response(
+      JSON.stringify({ error: "Failed to fetch queue" }),
       {
         status: spotifyResponse.status,
         headers: {
