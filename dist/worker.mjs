@@ -19,11 +19,13 @@ var src_default = {
       return new Response(null, { headers: corsHeaders });
     }
     try {
-      const setupComplete = isSetupComplete(env);
+      const secretsConfigured = isSetupComplete(env);
+      const oauthTokens = await getStoredTokens(env);
+      const fullyConfigured = secretsConfigured && oauthTokens;
       if (pathname === "/callback") {
         return handleCallback(request, env);
       }
-      if (!setupComplete) {
+      if (!secretsConfigured) {
         switch (pathname) {
           case "/":
             return Response.redirect(
@@ -32,6 +34,17 @@ var src_default = {
             );
           case "/credentials":
             return handleCredentials(request, env);
+          default:
+            return notFound();
+        }
+      }
+      if (!fullyConfigured) {
+        switch (pathname) {
+          case "/":
+            return Response.redirect(
+              new URL("/setup", request.url).toString(),
+              302
+            );
           case "/setup":
             return handleSetup(request, env);
           default:
@@ -198,8 +211,10 @@ async function handleCallback(request, env) {
   }
   await env.SPOTIFY_DATA.put(
     "spotify_tokens",
-    JSON.stringify(tokenResponse.data),
-    { expirationTtl: 3600 }
+    JSON.stringify({
+      ...tokenResponse.data,
+      obtained_at: Date.now()
+    })
   );
   await env.SPOTIFY_DATA.delete(`oauth_state_${state}`);
   return new Response(
@@ -379,7 +394,47 @@ async function exchangeCodeForTokens(code, callbackUrl, env) {
 }
 async function getStoredTokens(env) {
   const tokensJson = await env.SPOTIFY_DATA.get("spotify_tokens");
-  return tokensJson ? JSON.parse(tokensJson) : null;
+  if (!tokensJson)
+    return null;
+  const tokens = JSON.parse(tokensJson);
+  const expiresIn = tokens.expires_in || 3600;
+  const obtainedAt = tokens.obtained_at || 0;
+  const isExpired = Date.now() > obtainedAt + (expiresIn - 300) * 1e3;
+  if (isExpired && tokens.refresh_token && env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET) {
+    const refreshed = await refreshAccessToken(tokens.refresh_token, env);
+    if (refreshed) {
+      const newTokens = {
+        ...tokens,
+        ...refreshed,
+        obtained_at: Date.now()
+      };
+      await env.SPOTIFY_DATA.put("spotify_tokens", JSON.stringify(newTokens));
+      return newTokens;
+    }
+  }
+  return tokens;
+}
+async function refreshAccessToken(refreshToken, env) {
+  try {
+    const response = await fetch("https://accounts.spotify.com/api/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${btoa(
+          `${env.SPOTIFY_CLIENT_ID}:${env.SPOTIFY_CLIENT_SECRET}`
+        )}`
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken
+      })
+    });
+    if (!response.ok)
+      return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 async function callSpotifyAPI(endpoint, accessToken) {
   return fetch(`https://api.spotify.com${endpoint}`, {
