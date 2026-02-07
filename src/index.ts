@@ -130,18 +130,90 @@ export default {
 };
 
 /**
+ * Deploy worker code to Cloudflare. Shared by checkForUpdates (cron)
+ * and handleManualUpdate (dashboard button).
+ */
+async function deployWorkerCode(
+  env: Env,
+  workerName: string,
+  latestCode: string,
+  latestHash: string
+): Promise<boolean> {
+  // Find KV namespace
+  const kvList = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/storage/kv/namespaces?per_page=100`,
+    { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } }
+  );
+  const kvData: any = await kvList.json();
+  const kvNamespace = kvData.result?.find(
+    (ns: any) => ns.title.includes("SPOTIFY_DATA")
+  );
+  if (!kvNamespace) return false;
+
+  // Re-include all bindings so nothing is lost
+  const bindings: any[] = [
+    { type: "kv_namespace", name: "SPOTIFY_DATA", namespace_id: kvNamespace.id },
+    { type: "plain_text", name: "ENVIRONMENT", text: env.ENVIRONMENT || "production" },
+    { type: "plain_text", name: "WORKER_NAME", text: workerName },
+    { type: "plain_text", name: "CF_ACCOUNT_ID", text: env.CF_ACCOUNT_ID },
+    { type: "secret_text", name: "CF_API_TOKEN", text: env.CF_API_TOKEN },
+  ];
+  if (env.API_KEY) {
+    bindings.push({ type: "secret_text", name: "API_KEY", text: env.API_KEY });
+  }
+  if (env.SPOTIFY_CLIENT_ID) {
+    bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_ID", text: env.SPOTIFY_CLIENT_ID });
+  }
+  if (env.SPOTIFY_CLIENT_SECRET) {
+    bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_SECRET", text: env.SPOTIFY_CLIENT_SECRET });
+  }
+
+  const metadata = {
+    main_module: "worker.mjs",
+    bindings,
+    compatibility_date: "2024-01-01",
+  };
+
+  const formData = new FormData();
+  formData.append(
+    "metadata",
+    new Blob([JSON.stringify(metadata)], { type: "application/json" })
+  );
+  formData.append(
+    "worker.mjs",
+    new Blob([latestCode], { type: "application/javascript+module" }),
+    "worker.mjs"
+  );
+
+  const deployResp = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${workerName}`,
+    {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
+      body: formData,
+    }
+  );
+
+  if (deployResp.ok) {
+    await env.SPOTIFY_DATA.put("_worker_hash", latestHash);
+    console.log(`Deployed ${latestHash.slice(0, 8)}`);
+    return true;
+  }
+  return false;
+}
+
+/**
  * Self-update: fetch latest worker source and re-deploy if changed.
+ * Called by the cron scheduler — no request context available.
  */
 async function checkForUpdates(env: Env): Promise<void> {
   if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID || !env.WORKER_NAME) return;
 
   try {
-    // Fetch latest source from repo
     const resp = await fetch(WORKER_SOURCE_URL);
     if (!resp.ok) return;
     const latestCode = await resp.text();
 
-    // Hash it and compare with stored hash
     const hashBuffer = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(latestCode)
@@ -159,67 +231,7 @@ async function checkForUpdates(env: Env): Promise<void> {
       return;
     }
 
-    const workerName = env.WORKER_NAME;
-
-    // Re-deploy with the new code
-    const kvList = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/storage/kv/namespaces?per_page=100`,
-      { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } }
-    );
-    const kvData: any = await kvList.json();
-    const kvNamespace = kvData.result?.find(
-      (ns: any) => ns.title.includes("SPOTIFY_DATA")
-    );
-    if (!kvNamespace) return;
-
-    // Re-include all bindings so nothing is lost
-    const bindings: any[] = [
-      { type: "kv_namespace", name: "SPOTIFY_DATA", namespace_id: kvNamespace.id },
-      { type: "plain_text", name: "ENVIRONMENT", text: env.ENVIRONMENT || "production" },
-      { type: "plain_text", name: "WORKER_NAME", text: env.WORKER_NAME },
-      { type: "plain_text", name: "CF_ACCOUNT_ID", text: env.CF_ACCOUNT_ID },
-      { type: "secret_text", name: "CF_API_TOKEN", text: env.CF_API_TOKEN },
-    ];
-    if (env.API_KEY) {
-      bindings.push({ type: "secret_text", name: "API_KEY", text: env.API_KEY });
-    }
-    if (env.SPOTIFY_CLIENT_ID) {
-      bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_ID", text: env.SPOTIFY_CLIENT_ID });
-    }
-    if (env.SPOTIFY_CLIENT_SECRET) {
-      bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_SECRET", text: env.SPOTIFY_CLIENT_SECRET });
-    }
-
-    const metadata = {
-      main_module: "worker.mjs",
-      bindings,
-      compatibility_date: "2024-01-01",
-    };
-
-    const formData = new FormData();
-    formData.append(
-      "metadata",
-      new Blob([JSON.stringify(metadata)], { type: "application/json" })
-    );
-    formData.append(
-      "worker.mjs",
-      new Blob([latestCode], { type: "application/javascript+module" }),
-      "worker.mjs"
-    );
-
-    const deployResp = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${workerName}`,
-      {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
-        body: formData,
-      }
-    );
-
-    if (deployResp.ok) {
-      await env.SPOTIFY_DATA.put("_worker_hash", latestHash);
-      console.log(`Auto-updated to ${latestHash.slice(0, 8)}`);
-    }
+    await deployWorkerCode(env, env.WORKER_NAME, latestCode, latestHash);
   } catch (e) {
     console.error("Auto-update failed:", e);
   }
@@ -433,7 +445,9 @@ function escapeHtml(str: string): string {
 }
 
 /**
- * Manual update trigger
+ * Manual update trigger (dashboard button).
+ * Self-contained — does not delegate to checkForUpdates so it can
+ * derive the worker name from the request URL as a fallback.
  */
 async function handleManualUpdate(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") return notFound();
@@ -444,6 +458,8 @@ async function handleManualUpdate(request: Request, env: Env): Promise<Response>
       { headers: corsHeaders }
     );
   }
+
+  const workerName = env.WORKER_NAME || new URL(request.url).hostname.split(".")[0];
 
   try {
     // Fetch latest source
@@ -469,14 +485,20 @@ async function handleManualUpdate(request: Request, env: Env): Promise<Response>
       );
     }
 
-    // Trigger the full update
-    await checkForUpdates(env);
+    // Deploy the new code
+    const didUpdate = await deployWorkerCode(env, workerName, latestCode, latestHash);
 
-    const newHash = await env.SPOTIFY_DATA.get("_worker_hash");
-    const didUpdate = newHash === latestHash;
+    if (!didUpdate && !storedHash) {
+      // First run — no previous hash, store current hash for future comparisons
+      await env.SPOTIFY_DATA.put("_worker_hash", latestHash);
+      return Response.json(
+        { updated: false, message: "Version hash initialized. Already running latest code." },
+        { headers: corsHeaders }
+      );
+    }
 
     return Response.json(
-      { updated: didUpdate, message: didUpdate ? "Updated successfully." : "Update may have failed. Check logs." },
+      { updated: didUpdate, message: didUpdate ? "Updated successfully." : "Update failed. Check worker logs." },
       { headers: corsHeaders }
     );
   } catch (e: any) {
