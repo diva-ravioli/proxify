@@ -671,6 +671,9 @@ async function handleCredentialsSubmit(
     return new Response("Failed to save credentials: " + errors.join("; "), { status: 500 });
   }
 
+  // New credentials = fresh start — clear any old OAuth tokens
+  await env.SPOTIFY_DATA.delete("spotify_tokens");
+
   // Show a holding page that retries until the new secrets have propagated
   const setupUrl = new URL("/setup", request.url).toString();
   const html = `<!DOCTYPE html>
@@ -687,13 +690,14 @@ async function handleCredentialsSubmit(
   async function check() {
     attempt++;
     try {
-      const r = await fetch("${setupUrl}", { redirect: "manual" });
-      if (r.status === 200 || r.type === "opaqueredirect") {
+      const r = await fetch("${setupUrl}");
+      // 200 = setup page ready; anything other than 404 means secrets propagated
+      if (r.ok) {
         window.location.href = "${setupUrl}";
         return;
       }
     } catch {}
-    if (attempt < 10) setTimeout(check, 2000);
+    if (attempt < 15) setTimeout(check, 2000);
     else window.location.href = "${setupUrl}";
   }
   setTimeout(check, 2000);
