@@ -51,6 +51,12 @@ var src_default = {
             return notFound();
         }
       }
+      if (pathname === "/") {
+        if (request.method === "POST") {
+          return handleDashboardLogin(request, env);
+        }
+        return handleLoginPage();
+      }
       const authResult = await requireApiKey(request, env);
       if (authResult)
         return authResult;
@@ -61,6 +67,8 @@ var src_default = {
           return handleRecent(request, env);
         case "/health":
           return handleHealth(request, env);
+        case "/api/update":
+          return handleManualUpdate(request, env);
         default:
           return notFound();
       }
@@ -151,6 +159,226 @@ async function checkForUpdates(env) {
     }
   } catch (e) {
     console.error("Auto-update failed:", e);
+  }
+}
+function handleLoginPage() {
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Login</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); width: 100%; max-width: 380px; }
+  h1 { font-size: 1.4em; margin-bottom: 24px; color: #333; text-align: center; }
+  input[type="password"] { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 15px; margin-bottom: 16px; }
+  input:focus { outline: none; border-color: #1db954; }
+  button { width: 100%; padding: 12px; background: #1db954; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #1ed760; }
+  .error { color: #c62828; text-align: center; margin-bottom: 12px; font-size: 14px; display: none; }
+</style></head>
+<body>
+  <div class="card">
+    <h1>API Proxy</h1>
+    <div class="error" id="err">Invalid API key</div>
+    <form method="POST">
+      <input type="password" name="key" placeholder="API Key" autofocus required />
+      <button type="submit">Login</button>
+    </form>
+  </div>
+</body></html>`;
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
+}
+async function handleDashboardLogin(request, env) {
+  const formData = await request.formData();
+  const key = formData.get("key");
+  if (!key || key !== env.API_KEY) {
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Login</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); width: 100%; max-width: 380px; }
+  h1 { font-size: 1.4em; margin-bottom: 24px; color: #333; text-align: center; }
+  input[type="password"] { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 15px; margin-bottom: 16px; }
+  input:focus { outline: none; border-color: #1db954; }
+  button { width: 100%; padding: 12px; background: #1db954; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #1ed760; }
+  .error { color: #c62828; text-align: center; margin-bottom: 12px; font-size: 14px; }
+</style></head>
+<body>
+  <div class="card">
+    <h1>API Proxy</h1>
+    <div class="error">Invalid API key</div>
+    <form method="POST">
+      <input type="password" name="key" placeholder="API Key" autofocus required />
+      <button type="submit">Login</button>
+    </form>
+  </div>
+</body></html>`;
+    return new Response(html, {
+      status: 401,
+      headers: { "Content-Type": "text/html; charset=utf-8" }
+    });
+  }
+  return renderDashboard(key, env);
+}
+async function renderDashboard(apiKey, env) {
+  const tokens = await getStoredTokens(env);
+  const storedHash = await env.SPOTIFY_DATA.get("_worker_hash") || "unknown";
+  const hasAutoUpdate = !!(env.CF_API_TOKEN && env.CF_ACCOUNT_ID);
+  let nowPlaying = null;
+  if (tokens) {
+    try {
+      const resp = await callSpotifyAPI("/v1/me/player/currently-playing", tokens.access_token);
+      if (resp.status === 200) {
+        nowPlaying = await resp.json();
+      }
+    } catch {
+    }
+  }
+  const trackName = nowPlaying?.item ? escapeHtml(nowPlaying.item.name) : null;
+  const trackArtist = nowPlaying?.item ? escapeHtml(nowPlaying.item.artists?.map((a) => a.name).join(", ") || "Unknown") : null;
+  const trackInfo = trackName ? "<strong>" + trackName + "</strong> by " + trackArtist : "Nothing playing";
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+  .container { max-width: 640px; margin: 0 auto; }
+  .card { background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 24px; margin-bottom: 16px; }
+  h1 { font-size: 1.4em; color: #333; margin-bottom: 4px; }
+  .subtitle { color: #888; font-size: 0.9em; margin-bottom: 20px; }
+  h2 { font-size: 1.1em; color: #333; margin-bottom: 12px; }
+  .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+  .stat:last-child { border: none; }
+  .stat .label { color: #666; }
+  .stat .value { font-weight: 600; color: #333; }
+  .stat .value.ok { color: #2e7d32; }
+  .stat .value.warn { color: #f57c00; }
+  .now-playing { font-size: 15px; color: #333; }
+  .btn { display: inline-block; padding: 10px 20px; background: #1db954; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .btn:hover { background: #1ed760; }
+  .btn.secondary { background: #666; }
+  .btn.secondary:hover { background: #888; }
+  .btn:disabled { background: #ccc; cursor: not-allowed; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  #update-status { margin-top: 8px; font-size: 13px; color: #666; }
+  .logout { text-align: center; margin-top: 12px; }
+  .logout a { color: #888; font-size: 13px; text-decoration: none; }
+  .logout a:hover { color: #333; }
+</style></head>
+<body>
+<div class="container">
+  <div class="card">
+    <h1>Dashboard</h1>
+    <p class="subtitle">API Proxy Admin</p>
+
+    <div class="now-playing">${trackInfo}</div>
+  </div>
+
+  <div class="card">
+    <h2>Status</h2>
+    <div class="stat"><span class="label">OAuth</span><span class="value ok">Connected</span></div>
+    <div class="stat"><span class="label">API Key</span><span class="value ok">Configured</span></div>
+    <div class="stat"><span class="label">Auto-update</span><span class="value ${hasAutoUpdate ? "ok" : "warn"}">${hasAutoUpdate ? "Enabled" : "Not configured"}</span></div>
+    <div class="stat"><span class="label">Version hash</span><span class="value">${storedHash.slice(0, 12) || "n/a"}...</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Actions</h2>
+    <div class="actions">
+      <button class="btn" onclick="checkUpdate()" id="update-btn">Check for updates</button>
+      <a href="/health" class="btn secondary" id="health-link">Health check</a>
+    </div>
+    <div id="update-status"></div>
+  </div>
+
+  <div class="logout"><a href="/">Logout</a></div>
+</div>
+
+<script>
+  const API_KEY = '${apiKey}';
+  const headers = { 'Authorization': 'Bearer ' + API_KEY };
+
+  // Fix health link to use auth
+  document.getElementById('health-link').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const resp = await fetch('/health', { headers });
+    const data = await resp.json();
+    document.getElementById('update-status').textContent = JSON.stringify(data, null, 2);
+  });
+
+  async function checkUpdate() {
+    const btn = document.getElementById('update-btn');
+    const status = document.getElementById('update-status');
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+    status.textContent = '';
+    try {
+      const resp = await fetch('/api/update', { method: 'POST', headers });
+      const data = await resp.json();
+      status.textContent = data.message || JSON.stringify(data);
+      if (data.updated) {
+        status.style.color = '#2e7d32';
+        status.textContent = 'Updated! The page will reload in a few seconds...';
+        setTimeout(() => location.reload(), 5000);
+      }
+    } catch (e) {
+      status.textContent = 'Update check failed: ' + e.message;
+      status.style.color = '#c62828';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Check for updates';
+  }
+<\/script>
+</body></html>`;
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
+}
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+async function handleManualUpdate(request, env) {
+  if (request.method !== "POST")
+    return notFound();
+  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
+    return Response.json(
+      { updated: false, message: "Auto-update not configured (missing CF_API_TOKEN or CF_ACCOUNT_ID)." },
+      { headers: corsHeaders }
+    );
+  }
+  try {
+    const resp = await fetch(WORKER_SOURCE_URL);
+    if (!resp.ok) {
+      return Response.json(
+        { updated: false, message: "Failed to fetch latest source." },
+        { headers: corsHeaders }
+      );
+    }
+    const latestCode = await resp.text();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(latestCode));
+    const latestHash = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const storedHash = await env.SPOTIFY_DATA.get("_worker_hash");
+    if (storedHash === latestHash) {
+      return Response.json(
+        { updated: false, message: "Already up to date." },
+        { headers: corsHeaders }
+      );
+    }
+    await checkForUpdates(env);
+    const newHash = await env.SPOTIFY_DATA.get("_worker_hash");
+    const didUpdate = newHash === latestHash;
+    return Response.json(
+      { updated: didUpdate, message: didUpdate ? "Updated successfully." : "Update may have failed. Check logs." },
+      { headers: corsHeaders }
+    );
+  } catch (e) {
+    return Response.json(
+      { updated: false, message: "Update failed: " + e.message },
+      { status: 500, headers: corsHeaders }
+    );
   }
 }
 async function handleSetup(request, env) {
