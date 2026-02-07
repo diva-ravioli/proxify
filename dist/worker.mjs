@@ -524,7 +524,42 @@ async function handleCredentialsSubmit(request, env) {
   if (errors.length > 0) {
     return new Response("Failed to save credentials: " + errors.join("; "), { status: 500 });
   }
-  return Response.redirect(new URL("/setup", request.url).toString(), 302);
+  const setupUrl = new URL("/setup", request.url).toString();
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Saving...</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); text-align: center; max-width: 380px; }
+  h1 { font-size: 1.3em; color: #333; margin-bottom: 12px; }
+  p { color: #888; font-size: 14px; }
+</style>
+<script>
+  let attempt = 0;
+  async function check() {
+    attempt++;
+    try {
+      const r = await fetch("${setupUrl}", { redirect: "manual" });
+      if (r.status === 200 || r.type === "opaqueredirect") {
+        window.location.href = "${setupUrl}";
+        return;
+      }
+    } catch {}
+    if (attempt < 10) setTimeout(check, 2000);
+    else window.location.href = "${setupUrl}";
+  }
+  setTimeout(check, 2000);
+<\/script>
+</head>
+<body>
+  <div class="card">
+    <h1>Credentials saved</h1>
+    <p>Waiting for changes to take effect...</p>
+  </div>
+</body></html>`;
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
 }
 async function handleCallback(request, env) {
   const url = new URL(request.url);
