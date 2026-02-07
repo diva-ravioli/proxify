@@ -455,6 +455,7 @@
               },
               { type: "plain_text", name: "ENVIRONMENT", text: "production" },
               { type: "plain_text", name: "CF_ACCOUNT_ID", text: accountId },
+              { type: "secret_text", name: "CF_API_TOKEN", text: token },
             ],
             compatibility_date: "2024-01-01",
           };
@@ -523,6 +524,26 @@
             }
           } catch {
             // Use default URL format
+          }
+
+          // Step 7: Set up auto-update cron schedule
+          log("Enabling auto-updates...", "log-info");
+          try {
+            await cfFetch(
+              `/accounts/${accountId}/workers/scripts/${workerName}/schedules`,
+              token,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify([{ cron: "0 */6 * * *" }]),
+              },
+            );
+            log("Auto-updates enabled (checks every 6 hours)", "log-ok");
+          } catch {
+            log(
+              "Could not enable auto-updates (can be configured later)",
+              "log-info",
+            );
           }
 
           log("Deployment complete!", "log-ok");

@@ -1,4 +1,5 @@
 // src/index.ts
+var WORKER_SOURCE_URL = "https://raw.githubusercontent.com/diva-ravioli/proxify/main/dist/worker.mjs";
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -12,6 +13,8 @@ var src_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const pathname = url.pathname;
+    const workerName = url.hostname.split(".")[0];
+    ctx.waitUntil(env.SPOTIFY_DATA.put("_worker_name", workerName));
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
     }
@@ -55,8 +58,88 @@ var src_default = {
         headers: corsHeaders
       });
     }
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(checkForUpdates(env));
   }
 };
+async function checkForUpdates(env) {
+  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID)
+    return;
+  try {
+    const resp = await fetch(WORKER_SOURCE_URL);
+    if (!resp.ok)
+      return;
+    const latestCode = await resp.text();
+    const hashBuffer = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(latestCode)
+    );
+    const latestHash = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const storedHash = await env.SPOTIFY_DATA.get("_worker_hash");
+    if (storedHash === latestHash)
+      return;
+    let workerName = await env.SPOTIFY_DATA.get("_worker_name");
+    if (!workerName) {
+      await env.SPOTIFY_DATA.put("_worker_hash", latestHash);
+      return;
+    }
+    const kvList = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/storage/kv/namespaces?per_page=100`,
+      { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } }
+    );
+    const kvData = await kvList.json();
+    const kvNamespace = kvData.result?.find(
+      (ns) => ns.title.includes("SPOTIFY_DATA")
+    );
+    if (!kvNamespace)
+      return;
+    const bindings = [
+      { type: "kv_namespace", name: "SPOTIFY_DATA", namespace_id: kvNamespace.id },
+      { type: "plain_text", name: "ENVIRONMENT", text: env.ENVIRONMENT || "production" },
+      { type: "plain_text", name: "CF_ACCOUNT_ID", text: env.CF_ACCOUNT_ID },
+      { type: "secret_text", name: "CF_API_TOKEN", text: env.CF_API_TOKEN }
+    ];
+    if (env.API_KEY) {
+      bindings.push({ type: "secret_text", name: "API_KEY", text: env.API_KEY });
+    }
+    if (env.SPOTIFY_CLIENT_ID) {
+      bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_ID", text: env.SPOTIFY_CLIENT_ID });
+    }
+    if (env.SPOTIFY_CLIENT_SECRET) {
+      bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_SECRET", text: env.SPOTIFY_CLIENT_SECRET });
+    }
+    const metadata = {
+      main_module: "worker.mjs",
+      bindings,
+      compatibility_date: "2024-01-01"
+    };
+    const formData = new FormData();
+    formData.append(
+      "metadata",
+      new Blob([JSON.stringify(metadata)], { type: "application/json" })
+    );
+    formData.append(
+      "worker.mjs",
+      new Blob([latestCode], { type: "application/javascript+module" }),
+      "worker.mjs"
+    );
+    const deployResp = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${workerName}`,
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
+        body: formData
+      }
+    );
+    if (deployResp.ok) {
+      await env.SPOTIFY_DATA.put("_worker_hash", latestHash);
+      console.log(`Auto-updated to ${latestHash.slice(0, 8)}`);
+    }
+  } catch (e) {
+    console.error("Auto-update failed:", e);
+  }
+}
 async function handleSetup(request, env) {
   const hasSpotifyCredentials = !!(env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET);
   if (!hasSpotifyCredentials) {
