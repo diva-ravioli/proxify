@@ -21,6 +21,27 @@ const WORKER_SOURCE_URL =
 // redundant KV reads. Resets when the isolate is recycled.
 let _cachedTokens: { data: any; expiresAt: number } | null = null;
 
+// ── Distributed lock for auto-updates ──
+const UPDATE_LOCK_KEY = "_update_lock";
+const UPDATE_LOCK_TTL = 120; // seconds
+
+async function acquireUpdateLock(kv: KVNamespace): Promise<boolean> {
+  const existing = await kv.get(UPDATE_LOCK_KEY);
+  if (existing) {
+    // Lock is held by another invocation
+    return false;
+  }
+  // Attempt to acquire lock with TTL
+  await kv.put(UPDATE_LOCK_KEY, Date.now().toString(), { expirationTtl: UPDATE_LOCK_TTL });
+  // Double-check we got the lock (basic protection against race)
+  const check = await kv.get(UPDATE_LOCK_KEY);
+  return check === Date.now().toString() || check !== null;
+}
+
+async function releaseUpdateLock(kv: KVNamespace): Promise<void> {
+  await kv.delete(UPDATE_LOCK_KEY);
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -139,6 +160,29 @@ async function deployWorkerCode(
   latestCode: string,
   latestHash: string
 ): Promise<boolean> {
+  // ── Fail-safe: refuse to deploy if critical secrets are missing ──
+  // This prevents race conditions from wiping out credentials
+  const requiredSecrets = {
+    API_KEY: env.API_KEY,
+    SPOTIFY_CLIENT_ID: env.SPOTIFY_CLIENT_ID,
+    SPOTIFY_CLIENT_SECRET: env.SPOTIFY_CLIENT_SECRET,
+    CF_API_TOKEN: env.CF_API_TOKEN,
+    CF_ACCOUNT_ID: env.CF_ACCOUNT_ID,
+  };
+  const missingSecrets = Object.entries(requiredSecrets)
+    .filter(([_, value]) => !value || value.trim() === "")
+    .map(([key]) => key);
+
+  if (missingSecrets.length > 0) {
+    console.error(`Aborting deploy: missing secrets: ${missingSecrets.join(", ")}`);
+    return false;
+  }
+
+  if (!workerName || workerName.trim() === "") {
+    console.error("Aborting deploy: workerName is empty");
+    return false;
+  }
+
   // Find KV namespace
   const kvList = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/storage/kv/namespaces?per_page=100`,
@@ -148,25 +192,22 @@ async function deployWorkerCode(
   const kvNamespace = kvData.result?.find(
     (ns: any) => ns.title.includes("SPOTIFY_DATA")
   );
-  if (!kvNamespace) return false;
+  if (!kvNamespace) {
+    console.error("Aborting deploy: KV namespace not found");
+    return false;
+  }
 
-  // Re-include all bindings so nothing is lost
+  // Re-include all bindings — all secrets are guaranteed non-empty at this point
   const bindings: any[] = [
     { type: "kv_namespace", name: "SPOTIFY_DATA", namespace_id: kvNamespace.id },
     { type: "plain_text", name: "ENVIRONMENT", text: env.ENVIRONMENT || "production" },
     { type: "plain_text", name: "WORKER_NAME", text: workerName },
     { type: "plain_text", name: "CF_ACCOUNT_ID", text: env.CF_ACCOUNT_ID },
     { type: "secret_text", name: "CF_API_TOKEN", text: env.CF_API_TOKEN },
+    { type: "secret_text", name: "API_KEY", text: env.API_KEY },
+    { type: "secret_text", name: "SPOTIFY_CLIENT_ID", text: env.SPOTIFY_CLIENT_ID },
+    { type: "secret_text", name: "SPOTIFY_CLIENT_SECRET", text: env.SPOTIFY_CLIENT_SECRET },
   ];
-  if (env.API_KEY) {
-    bindings.push({ type: "secret_text", name: "API_KEY", text: env.API_KEY });
-  }
-  if (env.SPOTIFY_CLIENT_ID) {
-    bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_ID", text: env.SPOTIFY_CLIENT_ID });
-  }
-  if (env.SPOTIFY_CLIENT_SECRET) {
-    bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_SECRET", text: env.SPOTIFY_CLIENT_SECRET });
-  }
 
   const metadata = {
     main_module: "worker.mjs",
@@ -205,9 +246,18 @@ async function deployWorkerCode(
 /**
  * Self-update: fetch latest worker source and re-deploy if changed.
  * Called by the cron scheduler — no request context available.
+ * Uses a distributed lock to prevent race conditions when multiple
+ * cron invocations happen simultaneously.
  */
 async function checkForUpdates(env: Env): Promise<void> {
   if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID || !env.WORKER_NAME) return;
+
+  // Acquire distributed lock to prevent concurrent updates
+  const lockAcquired = await acquireUpdateLock(env.SPOTIFY_DATA);
+  if (!lockAcquired) {
+    console.log("Update lock held by another invocation, skipping");
+    return;
+  }
 
   try {
     const resp = await fetch(WORKER_SOURCE_URL);
@@ -234,6 +284,8 @@ async function checkForUpdates(env: Env): Promise<void> {
     await deployWorkerCode(env, env.WORKER_NAME, latestCode, latestHash);
   } catch (e) {
     console.error("Auto-update failed:", e);
+  } finally {
+    await releaseUpdateLock(env.SPOTIFY_DATA);
   }
 }
 
@@ -461,6 +513,15 @@ async function handleManualUpdate(request: Request, env: Env): Promise<Response>
 
   const workerName = env.WORKER_NAME || new URL(request.url).hostname.split(".")[0];
 
+  // Acquire distributed lock to prevent concurrent updates
+  const lockAcquired = await acquireUpdateLock(env.SPOTIFY_DATA);
+  if (!lockAcquired) {
+    return Response.json(
+      { updated: false, message: "Another update is in progress. Try again in a moment." },
+      { headers: corsHeaders }
+    );
+  }
+
   try {
     // Fetch latest source
     const resp = await fetch(WORKER_SOURCE_URL);
@@ -506,6 +567,8 @@ async function handleManualUpdate(request: Request, env: Env): Promise<Response>
       { updated: false, message: "Update failed: " + e.message },
       { status: 500, headers: corsHeaders }
     );
+  } finally {
+    await releaseUpdateLock(env.SPOTIFY_DATA);
   }
 }
 

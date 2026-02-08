@@ -1,6 +1,20 @@
 // src/index.ts
 var WORKER_SOURCE_URL = "https://raw.githubusercontent.com/diva-ravioli/proxify/main/dist/worker.mjs";
 var _cachedTokens = null;
+var UPDATE_LOCK_KEY = "_update_lock";
+var UPDATE_LOCK_TTL = 120;
+async function acquireUpdateLock(kv) {
+  const existing = await kv.get(UPDATE_LOCK_KEY);
+  if (existing) {
+    return false;
+  }
+  await kv.put(UPDATE_LOCK_KEY, Date.now().toString(), { expirationTtl: UPDATE_LOCK_TTL });
+  const check = await kv.get(UPDATE_LOCK_KEY);
+  return check === Date.now().toString() || check !== null;
+}
+async function releaseUpdateLock(kv) {
+  await kv.delete(UPDATE_LOCK_KEY);
+}
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -86,6 +100,22 @@ var src_default = {
   }
 };
 async function deployWorkerCode(env, workerName, latestCode, latestHash) {
+  const requiredSecrets = {
+    API_KEY: env.API_KEY,
+    SPOTIFY_CLIENT_ID: env.SPOTIFY_CLIENT_ID,
+    SPOTIFY_CLIENT_SECRET: env.SPOTIFY_CLIENT_SECRET,
+    CF_API_TOKEN: env.CF_API_TOKEN,
+    CF_ACCOUNT_ID: env.CF_ACCOUNT_ID
+  };
+  const missingSecrets = Object.entries(requiredSecrets).filter(([_, value]) => !value || value.trim() === "").map(([key]) => key);
+  if (missingSecrets.length > 0) {
+    console.error(`Aborting deploy: missing secrets: ${missingSecrets.join(", ")}`);
+    return false;
+  }
+  if (!workerName || workerName.trim() === "") {
+    console.error("Aborting deploy: workerName is empty");
+    return false;
+  }
   const kvList = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/storage/kv/namespaces?per_page=100`,
     { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } }
@@ -94,24 +124,20 @@ async function deployWorkerCode(env, workerName, latestCode, latestHash) {
   const kvNamespace = kvData.result?.find(
     (ns) => ns.title.includes("SPOTIFY_DATA")
   );
-  if (!kvNamespace)
+  if (!kvNamespace) {
+    console.error("Aborting deploy: KV namespace not found");
     return false;
+  }
   const bindings = [
     { type: "kv_namespace", name: "SPOTIFY_DATA", namespace_id: kvNamespace.id },
     { type: "plain_text", name: "ENVIRONMENT", text: env.ENVIRONMENT || "production" },
     { type: "plain_text", name: "WORKER_NAME", text: workerName },
     { type: "plain_text", name: "CF_ACCOUNT_ID", text: env.CF_ACCOUNT_ID },
-    { type: "secret_text", name: "CF_API_TOKEN", text: env.CF_API_TOKEN }
+    { type: "secret_text", name: "CF_API_TOKEN", text: env.CF_API_TOKEN },
+    { type: "secret_text", name: "API_KEY", text: env.API_KEY },
+    { type: "secret_text", name: "SPOTIFY_CLIENT_ID", text: env.SPOTIFY_CLIENT_ID },
+    { type: "secret_text", name: "SPOTIFY_CLIENT_SECRET", text: env.SPOTIFY_CLIENT_SECRET }
   ];
-  if (env.API_KEY) {
-    bindings.push({ type: "secret_text", name: "API_KEY", text: env.API_KEY });
-  }
-  if (env.SPOTIFY_CLIENT_ID) {
-    bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_ID", text: env.SPOTIFY_CLIENT_ID });
-  }
-  if (env.SPOTIFY_CLIENT_SECRET) {
-    bindings.push({ type: "secret_text", name: "SPOTIFY_CLIENT_SECRET", text: env.SPOTIFY_CLIENT_SECRET });
-  }
   const metadata = {
     main_module: "worker.mjs",
     bindings,
@@ -145,6 +171,11 @@ async function deployWorkerCode(env, workerName, latestCode, latestHash) {
 async function checkForUpdates(env) {
   if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID || !env.WORKER_NAME)
     return;
+  const lockAcquired = await acquireUpdateLock(env.SPOTIFY_DATA);
+  if (!lockAcquired) {
+    console.log("Update lock held by another invocation, skipping");
+    return;
+  }
   try {
     const resp = await fetch(WORKER_SOURCE_URL);
     if (!resp.ok)
@@ -165,6 +196,8 @@ async function checkForUpdates(env) {
     await deployWorkerCode(env, env.WORKER_NAME, latestCode, latestHash);
   } catch (e) {
     console.error("Auto-update failed:", e);
+  } finally {
+    await releaseUpdateLock(env.SPOTIFY_DATA);
   }
 }
 function handleLoginPage() {
@@ -362,6 +395,13 @@ async function handleManualUpdate(request, env) {
     );
   }
   const workerName = env.WORKER_NAME || new URL(request.url).hostname.split(".")[0];
+  const lockAcquired = await acquireUpdateLock(env.SPOTIFY_DATA);
+  if (!lockAcquired) {
+    return Response.json(
+      { updated: false, message: "Another update is in progress. Try again in a moment." },
+      { headers: corsHeaders }
+    );
+  }
   try {
     const resp = await fetch(WORKER_SOURCE_URL);
     if (!resp.ok) {
@@ -397,6 +437,8 @@ async function handleManualUpdate(request, env) {
       { updated: false, message: "Update failed: " + e.message },
       { status: 500, headers: corsHeaders }
     );
+  } finally {
+    await releaseUpdateLock(env.SPOTIFY_DATA);
   }
 }
 async function handleSetup(request, env) {
